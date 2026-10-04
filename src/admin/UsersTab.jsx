@@ -137,7 +137,7 @@ export default function UsersTab({ meId, initialQuery = '' }) {
       <EmptyState
         icon={UserIcon}
         title={q ? 'Hech kim topilmadi' : "Foydalanuvchilar yo'q"}
-        text={q ? `"${q}" bo'yicha ism yoki telefon topilmadi.` : undefined}
+        text={q ? `"${q}" bo'yicha ism, telefon yoki email topilmadi.` : undefined}
       />
     );
   } else {
@@ -161,10 +161,21 @@ export default function UsersTab({ meId, initialQuery = '' }) {
                       <p className={cx('truncate font-bold text-slate-900', u.blocked_at && 'line-through decoration-red-400')}>{u.name}</p>
                       <UserBadges u={u} me={u.id === meId} />
                     </div>
-                    <p className="mt-0.5 text-sm text-slate-600">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-600">
                       <a href={`tel:${u.phone}`} className="font-medium hover:text-emerald-700 hover:underline">
                         {formatPhone(u.phone)}
                       </a>
+                      {u.email && (
+                        <a
+                          href={`mailto:${u.email}`}
+                          className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium hover:text-emerald-700 hover:underline"
+                          title={u.email_verified ? 'Email tasdiqlangan' : 'Email tasdiqlanmagan'}
+                          data-testid="admin-user-email"
+                        >
+                          <span className="truncate">{u.email}</span>
+                          {u.email_verified && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-emerald-600" strokeWidth={3} />}
+                        </a>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -196,7 +207,7 @@ export default function UsersTab({ meId, initialQuery = '' }) {
   return (
     <section aria-label="Foydalanuvchilar">
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <SearchField value={query} onChange={setQuery} placeholder="Ism yoki telefon raqam…" label="Foydalanuvchilarni qidirish" />
+        <SearchField value={query} onChange={setQuery} placeholder="Ism, telefon yoki email…" label="Foydalanuvchilarni qidirish" />
         {!list.loading && <span className="text-sm font-semibold text-slate-500">Jami: {list.total}</span>}
       </div>
       {body}

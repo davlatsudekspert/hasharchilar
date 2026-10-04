@@ -1,9 +1,17 @@
 // Auth holati (React context): joriy foydalanuvchi, kirish, ro'yxatdan o'tish, chiqish.
+// Email bilan ro'yxat / parolni tiklash oqimlari {token, user} olgach `signIn(data)` ni chaqiradi.
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearToken, getToken, onUnauthorized, setToken } from './api.js';
 import { storage, USER_KEY } from './storage.js';
 
 const AuthContext = createContext(null);
+
+// Parol bilan kirilganda xabardor qilinadiganlar (masalan, email tasdiqlanmagan bo'lsa "Emailni tasdiqlang" oynasi)
+const loginListeners = new Set();
+export function onPasswordLogin(fn) {
+  loginListeners.add(fn);
+  return () => loginListeners.delete(fn);
+}
 
 export function AuthProvider({ children }) {
   // Keshdagi foydalanuvchi — internet vaqtincha bo'lmasa ham "kirgan" holat saqlanadi
@@ -64,7 +72,16 @@ export function AuthProvider({ children }) {
     [refresh, saveUser],
   );
 
-  const login = useCallback(async (phone, password) => finishAuth(await api.login({ phone, password })), [finishAuth]);
+  /** `id` — telefon (+998...) yoki email. */
+  const login = useCallback(
+    async (id, password) => {
+      const user = finishAuth(await api.login({ login: id, password }));
+      // Obunachilar keyingi tick'da: chaqiruvchi (forma) avval o'z ishini tugatsin
+      setTimeout(() => loginListeners.forEach((fn) => fn(user)), 0);
+      return user;
+    },
+    [finishAuth],
+  );
 
   const register = useCallback(
     async (name, phone, password) => finishAuth(await api.register({ name, phone, password })),
@@ -81,8 +98,8 @@ export function AuthProvider({ children }) {
   }, [signOutLocal]);
 
   const value = useMemo(
-    () => ({ user, stats, ready, login, register, logout, refresh, setUser: saveUser }),
-    [user, stats, ready, login, register, logout, refresh, saveUser],
+    () => ({ user, stats, ready, login, register, signIn: finishAuth, logout, refresh, setUser: saveUser }),
+    [user, stats, ready, login, register, finishAuth, logout, refresh, saveUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

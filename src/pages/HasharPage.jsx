@@ -126,6 +126,7 @@ export default function HasharPage({ route }) {
   };
 
   const complete = async () => {
+    if (!(await actions.requireVerified('manage'))) return;
     setBusy(true);
     setActionError('');
     try {
@@ -147,6 +148,7 @@ export default function HasharPage({ route }) {
   };
 
   const remove = async () => {
+    if (!(await actions.requireVerified('manage'))) return;
     setBusy(true);
     setActionError('');
     try {

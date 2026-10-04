@@ -6,6 +6,7 @@ import { Spinner } from './components/ui.jsx';
 import { getToken, setToken } from './lib/api.js';
 import { AuthProvider } from './lib/auth.jsx';
 import { initNative, restoreToken } from './lib/native.js';
+import { loadServerConfig } from './lib/serverConfig.js';
 import { useAdminRoute } from './lib/router.js';
 import { ThemeProvider } from './lib/theme.jsx';
 import './index.css';
@@ -62,6 +63,7 @@ async function start() {
   initNative();
   // Native: WebView ma'lumotlari tozalangan bo'lsa tokenni Preferences dan tiklaymiz
   await restoreToken(getToken, setToken);
+  loadServerConfig(); // /api/config (email yoqilganmi) — fonda
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <Boundary>

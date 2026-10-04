@@ -1,12 +1,30 @@
-// Ilova darajasidagi amallar: kirishni talab qilish (AuthModal), qo'shilish/chiqish, ulashish.
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
+// Ilova darajasidagi amallar: kirishni talab qilish (AuthModal), emailni tasdiqlashni talab qilish
+// (EmailVerifyScreen), qo'shilish/chiqish, ulashish.
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import AuthModal from '../components/AuthModal.jsx';
+import EmailVerifyScreen from '../components/EmailVerifyScreen.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { api } from './api.js';
-import { useAuth } from './auth.jsx';
+import { api, onEmailUnverified } from './api.js';
+import { onPasswordLogin, useAuth } from './auth.jsx';
 import { shareUrl } from './config.js';
 import { haptic, shareLink } from './native.js';
+import { getServerConfig, useServerConfig } from './serverConfig.js';
 import { invalidate } from './store.js';
+
+// "Emailni tasdiqlang" bosqichi shu brauzer sessiyasida o'zi bir marta ko'rsatilganmi (keyin — banner va amallar)
+const PROMPTED_KEY = 'hashar_verify_prompted';
+function promptedOnce() {
+  try {
+    if (window.sessionStorage.getItem(PROMPTED_KEY) === '1') return true;
+    window.sessionStorage.setItem(PROMPTED_KEY, '1');
+  } catch {
+    /* e'tiborsiz */
+  }
+  return false;
+}
+
+/** Email xizmati yoqilgan va foydalanuvchi emaili tasdiqlanmagan. */
+export const needsEmailVerify = (user) => Boolean(user) && user.email_verified === false && getServerConfig().email_enabled;
 
 const ActionsContext = createContext(null);
 
@@ -16,6 +34,29 @@ export function ActionsProvider({ children }) {
   const [authReason, setAuthReason] = useState(null);
   const resolver = useRef(null);
   const [busyId, setBusyId] = useState(null);
+  const [verifyReason, setVerifyReason] = useState(null);
+  const verifyResolvers = useRef([]);
+  // Eng so'nggi foydalanuvchi (AuthModal dan keyin render kutilmasin)
+  const userRef = useRef(auth.user);
+  userRef.current = auth.user ?? userRef.current;
+  if (!auth.user && auth.ready) userRef.current = null;
+
+  /** "Emailni tasdiqlang" oynasini ochadi; natija — tasdiqlandimi. Ochiq bo'lsa o'sha oynani kutadi. */
+  const promptVerify = useCallback((reason = 'action') => {
+    return new Promise((resolve) => {
+      verifyResolvers.current.push(resolve);
+      // Aniq sabab (masalan, 'join') umumiy 'login' dan ustun
+      setVerifyReason((r) => (!r || r === 'login' ? reason : r));
+    });
+  }, []);
+
+  const finishVerify = (ok) => {
+    setVerifyReason(null);
+    const list = verifyResolvers.current;
+    verifyResolvers.current = [];
+    if (ok) invalidate('');
+    list.forEach((r) => r(ok));
+  };
 
   /** Kirgan bo'lsa true; aks holda AuthModal ochiladi va natija kutiladi. */
   const requireAuth = useCallback(
@@ -30,6 +71,7 @@ export function ActionsProvider({ children }) {
   );
 
   const finishAuth = (ok, user) => {
+    if (ok && user) userRef.current = user;
     setAuthReason(null);
     const r = resolver.current;
     resolver.current = null;
@@ -37,6 +79,46 @@ export function ActionsProvider({ children }) {
     invalidate('');
     r?.(ok);
   };
+
+  /** Kirgan va (email yoqilgan bo'lsa) emaili tasdiqlangan bo'lsa true; aks holda kerakli oyna ochiladi. */
+  const requireVerified = useCallback(
+    async (reason = 'action') => {
+      if (!(await requireAuth(reason))) return false;
+      if (!needsEmailVerify(userRef.current)) return true;
+      return promptVerify(reason);
+    },
+    [requireAuth, promptVerify],
+  );
+
+  // Parol bilan kirgan, emaili tasdiqlanmagan foydalanuvchi — darhol "Emailni tasdiqlang"
+  useEffect(
+    () =>
+      onPasswordLogin((u) => {
+        if (!needsEmailVerify(u)) return;
+        promptedOnce();
+        promptVerify('login');
+      }),
+    [promptVerify],
+  );
+
+  // Avvaldan kirgan (sessiyasi saqlangan) emaili tasdiqlanmagan foydalanuvchi — sessiyada bir marta shu bosqich
+  const { email_enabled: emailOn } = useServerConfig();
+  const unverifiedId = auth.ready && auth.user && auth.user.email_verified === false ? auth.user.id : null;
+  useEffect(() => {
+    if (emailOn && unverifiedId && !promptedOnce()) promptVerify('login');
+  }, [emailOn, unverifiedId, promptVerify]);
+
+  // Istalgan so'rov 403 email_unverified qaytarsa (masalan, boshqa qurilmada email o'zgargan) — shu oyna
+  const setUser = auth.setUser;
+  useEffect(
+    () =>
+      onEmailUnverified(() => {
+        const u = userRef.current;
+        if (u && u.email_verified !== false) setUser({ ...u, email_verified: false });
+        promptVerify('action');
+      }),
+    [promptVerify, setUser],
+  );
 
   const refreshAfterChange = useCallback(
     (id) => {
@@ -49,7 +131,7 @@ export function ActionsProvider({ children }) {
   /** Qo'shilish. Muvaffaqiyatli bo'lsa server javobi ({joined, volunteer_count}). */
   const join = useCallback(
     async (id) => {
-      if (!(await requireAuth('join'))) return null;
+      if (!(await requireVerified('join'))) return null;
       setBusyId(id);
       try {
         const r = await api.join(id);
@@ -64,11 +146,12 @@ export function ActionsProvider({ children }) {
         setBusyId(null);
       }
     },
-    [requireAuth, toast, refreshAfterChange],
+    [requireVerified, toast, refreshAfterChange],
   );
 
   const leave = useCallback(
     async (id) => {
+      if (!(await requireVerified('leave'))) return null;
       setBusyId(id);
       try {
         const r = await api.leave(id);
@@ -83,7 +166,7 @@ export function ActionsProvider({ children }) {
         setBusyId(null);
       }
     },
-    [toast, refreshAfterChange],
+    [requireVerified, toast, refreshAfterChange],
   );
 
   const share = useCallback(
@@ -101,14 +184,15 @@ export function ActionsProvider({ children }) {
   );
 
   const value = useMemo(
-    () => ({ requireAuth, join, leave, share, busyId, refreshAfterChange }),
-    [requireAuth, join, leave, share, busyId, refreshAfterChange],
+    () => ({ requireAuth, requireVerified, promptVerify, verifying: !!verifyReason, join, leave, share, busyId, refreshAfterChange }),
+    [requireAuth, requireVerified, promptVerify, verifyReason, join, leave, share, busyId, refreshAfterChange],
   );
 
   return (
     <ActionsContext.Provider value={value}>
       {children}
       {authReason && <AuthModal reason={authReason} onClose={() => finishAuth(false)} onSuccess={(u) => finishAuth(true, u)} />}
+      {verifyReason && <EmailVerifyScreen reason={verifyReason} onDone={finishVerify} />}
     </ActionsContext.Provider>
   );
 }

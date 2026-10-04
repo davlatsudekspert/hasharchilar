@@ -21,6 +21,7 @@ import { LocationPicker } from '../components/map/index.jsx';
 import PhotoInput from '../components/PhotoInput.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, CategoryChip, inputCls, labelCls, Spinner } from '../components/ui.jsx';
+import { needsEmailVerify, useActions } from '../lib/actions.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { CATEGORIES } from '../lib/meta.js';
@@ -71,6 +72,7 @@ const initial = () => {
 
 export default function CreatePage() {
   const { user, ready } = useAuth();
+  const { requireVerified } = useActions();
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [f, setF] = useState(initial);
@@ -81,6 +83,14 @@ export default function CreatePage() {
   const [customItem, setCustomItem] = useState('');
   const autoAddress = useRef(!f.address);
   const topRef = useRef(null);
+
+  // Emaili tasdiqlanmagan foydalanuvchi — sahifaga kirganda (forma to'ldirilishidan oldin) "Emailni tasdiqlang"
+  const uid = user?.id;
+  useEffect(() => {
+    if (ready && uid && needsEmailVerify(user)) requireVerified('create');
+    // faqat foydalanuvchi o'zgarganda
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, uid]);
 
   // Qoralama (rasmsiz)
   useEffect(() => {
@@ -154,6 +164,7 @@ export default function CreatePage() {
         return;
       }
     }
+    if (!(await requireVerified('create'))) return;
     setBusy(true);
     setSubmitError('');
     try {

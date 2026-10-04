@@ -1,13 +1,16 @@
 // Ilova qobig'i: yuqori navigatsiya, sahifalar (hash router), pastki tab bar, oflayn banner.
 import { useEffect, useLayoutEffect } from 'react';
 import AppBanner, { useAppInfo } from './components/AppBanner.jsx';
+import { EmailBanner } from './components/EmailVerifyScreen.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import OfflineBanner from './components/OfflineBanner.jsx';
 import TabBar from './components/TabBar.jsx';
-import { ActionsProvider } from './lib/actions.jsx';
+import { ActionsProvider, useActions } from './lib/actions.jsx';
+import { useAuth } from './lib/auth.jsx';
 import { hideSplash } from './lib/native.js';
 import { navWasPop, savedScroll, useRoute } from './lib/router.js';
+import { useServerConfig } from './lib/serverConfig.js';
 import { cx } from './lib/utils.js';
 import AboutPage from './pages/AboutPage.jsx';
 import CreatePage from './pages/CreatePage.jsx';
@@ -50,6 +53,17 @@ const TITLES = {
   notfound: 'Sahifa topilmadi',
 };
 
+// "Emailingizni tasdiqlang" eslatmasi faqat ko'rish sahifalarida (xarita — to'liq ekran, yaratish/kirish — o'z oqimi)
+const NO_EMAIL_BANNER = new Set(['map', 'create', 'login']);
+
+function EmailBannerSlot({ route }) {
+  const { user } = useAuth();
+  const { email_enabled: emailOn } = useServerConfig();
+  const { promptVerify, verifying } = useActions();
+  if (!emailOn || !user || user.email_verified !== false || verifying || NO_EMAIL_BANNER.has(route.name)) return null;
+  return <EmailBanner onVerify={() => promptVerify('login')} />;
+}
+
 export default function App() {
   const route = useRoute();
   const appInfo = useAppInfo();
@@ -86,6 +100,7 @@ export default function App() {
         </a>
         <OfflineBanner />
         <Header />
+        <EmailBannerSlot route={route} />
         {route.name === 'home' && <AppBanner info={appInfo} />}
         <main id="main" tabIndex={-1} key={route.path} className="page-enter flex-1 outline-none">
           <Page route={route} appInfo={appInfo} />

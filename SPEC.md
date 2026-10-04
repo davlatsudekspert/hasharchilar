@@ -79,9 +79,22 @@ comments(id PK, hashar_id REFERENCES hashars ON DELETE CASCADE, user_id REFERENC
 geo_cache(key TEXT PK, value TEXT NOT NULL /* JSON */, created_at INTEGER NOT NULL /* unix */) + INDEX(created_at)
 ```
 
+`migrations/0004_email.sql` (DO rejimida production ma'lumotlari ustida; `users` jadvali qayta qurilmaydi — `phone NOT NULL` qoladi):
+```sql
+-- avval: users.email = NULLIF(lower(trim(email)), ''), takrorlari (eng kichik id dan tashqari) NULL
+users.email_verified_at TEXT                                    -- NULL — tasdiqlanmagan (eski hisoblar)
+UNIQUE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL   -- emaillar trim + kichik harf
+email_otps(id PK, email TEXT NOT NULL, purpose TEXT NOT NULL CHECK IN ('register','reset','verify'),
+           user_id INTEGER, code_hash TEXT NOT NULL /* sha256(purpose|email|code) hex */,
+           payload TEXT /* register: {name, phone, password_hash}; ishlatilgach NULL */,
+           attempts INTEGER NOT NULL DEFAULT 0, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL /* unix */,
+           consumed_at INTEGER)  + INDEX(email, purpose, created_at), INDEX(user_id) WHERE user_id IS NOT NULL
+```
+
 ## 4. Autentifikatsiya
 
-- Ro'yxat: ism + telefon (+998XXXXXXXXX ga normallashtiriladi) + parol (≥ 6 belgi).
+- Ro'yxat: ism + email + telefon (+998XXXXXXXXX ga normallashtiriladi) + parol (≥ 6 belgi); email xizmati
+  yoqilgan bo'lsa — faqat email kodi orqali (5.2-bo'lim). Kirish — telefon yoki email + parol.
 - Parol: PBKDF2-SHA256, 100 000 iteratsiya (Workers limiti), 16 bayt tasodifiy salt.
   Saqlash formati: `pbkdf2$100000$<salt_b64>$<hash_b64>`. Solishtirish — doimiy vaqtli.
 - Sessiya: 32 bayt tasodifiy token (base64url) → mijozga; DB'da faqat SHA-256 xeshi. Muddat 90 kun.
@@ -137,6 +150,42 @@ Bloklangan foydalanuvchi: kirish → 403 "Hisobingiz bloklangan", token qabul qi
 | DELETE | `/api/admin/comments/:id` | istalgan izoh → `{ok:true}`; yo'q → 404 |
 
 Admin `overview` da `comments` (izohlar soni) ham bor; `hashars` ro'yxatidagi DTO da `category`.
+
+### 5.2. Email: ro'yxat, kirish, parolni tiklash, tasdiqlash (Resend)
+
+`emailEnabled(env)` = `RESEND_API_KEY` bor YOKI `EMAIL_MOCK === '1'` (faqat lokal/test: xat yuborilmaydi, javobda
+`dev_code`). Xat: `POST https://api.resend.com/emails`, `Authorization: Bearer <RESEND_API_KEY>`,
+`{from: RESEND_FROM || 'Hasharchilar <no-reply@nfcstore.uz>', to: [email], subject, html, text}`, 8 s timeout;
+xato/2xx emas → 502 `"Email yuborilmadi, birozdan keyin qayta urinib ko'ring"` (logda faqat Resend statusi).
+Xato javoblarida mashina o'qiydigan `code` bo'lishi mumkin: `{ "error": "...", "code": "..." }`.
+
+Kod qoidalari: 6 raqam (`crypto.getRandomValues`, rejection sampling); bazada `sha256(purpose|email|code)`;
+muddat 10 daqiqa; 5 ta noto'g'ri urinish → kod o'ladi (urinish atomar band qilinadi); ishlatilgan kod qayta
+ishlamaydi; yangi kod shu email+maqsad (verify'da — shu foydalanuvchi) eskilarini bekor qiladi; solishtirish
+doimiy vaqtda. Qayta yuborish: email+maqsad bo'yicha 60 s (429 + `Retry-After`; kod ishlatilgach bekor);
+bitta emailga 5 / soat (barcha maqsadlar), bitta IP dan 20 / soat. Test uchun (faqat `EMAIL_MOCK=1`):
+`x-test-otp-ttl` / env `OTP_TTL_SEC`, `x-test-otp-cooldown`, `x-test-legacy-register: 1`.
+
+| Metod | Yo'l | Auth | Tavsif |
+|---|---|---|---|
+| GET | `/api/config` | – | `{email_enabled}` |
+| POST | `/api/auth/register/start` | – | `{name, phone, email, password}` → validatsiya (`parseName/parseEmail/parsePhone/parsePassword`), telefon yoki email band → 409, parol xeshi hozir hisoblanib kod payload'iga yoziladi → `{ok, email, expires_in: 600, resend_in: 60}` (+ `dev_code` faqat mock). Email o'chiq → 503 `"Email xizmati sozlanmagan"` |
+| POST | `/api/auth/register/verify` | – | `{email, code}` → noto'g'ri → 400 `"Kod noto'g'ri"` (urinish +1); eskirgan/o'lgan/ishlatilgan → 400 `"Kod eskirgan, yangisini so'rang"`; telefon/email qayta tekshiriladi (409); hisob `email`, `email_verified_at` bilan yaratiladi → 201 `{token, user}` |
+| POST | `/api/auth/register` | – | eski APK'lar: email yoqilgan bo'lsa 410 `{error: "Ilovani yangilang: ro'yxatdan o'tish endi email orqali", code: "email_required"}`, aks holda avvalgidek |
+| POST | `/api/auth/login` | – | `{login, password}` (`@` bor — email, katta-kichik harfsiz, faqat tasdiqlangan) yoki eski `{phone, password}`; limitlar va soxta PBKDF2 avvalgidek; noto'g'ri → 401 `"Telefon yoki parol noto'g'ri"` / `"Email yoki parol noto'g'ri"`; bloklangan → 403 |
+| POST | `/api/auth/forgot` | – | `{email}` → doim 200 `{ok, email, expires_in, resend_in}`; `reset` kodi faqat shu email tasdiqlangan va bloklanmagan hisob bo'lsa yaratiladi (xat fonda); limitlar hisob borligidan qat'i nazar bir xil |
+| POST | `/api/auth/reset` | – | `{email, code, new_password}` → yangi parol xeshi, foydalanuvchining BARCHA sessiyalari o'chadi, yangi sessiya → `{token, user}` |
+| POST | `/api/me/email/start` | ✓ | `{email}` → boshqa hisobda → 409; o'zining tasdiqlangan emaili → 400; `verify` kodi shu foydalanuvchiga bog'lanadi → `{ok, email, expires_in, resend_in}` |
+| POST | `/api/me/email/verify` | ✓ | `{code}` → `users.email`, `email_verified_at` → `{user}` |
+
+**Email majburiy** (faqat `emailEnabled`): `requireVerifiedEmail` — kirish + `email_verified_at`, aks holda 403
+`{error: "Avval emailingizni tasdiqlang", code: "email_unverified"}`. Qo'llanadi: `POST /api/hashars`,
+`POST|DELETE /api/hashars/:id/join`, `POST /api/hashars/:id/complete`, `DELETE /api/hashars/:id`,
+`POST /api/hashars/:id/comments`. Kirish, ko'rish, `/api/me/*` (profil, parol, email) va `/api/admin/*` — cheklanmaydi.
+
+`user` (o'ziga: `/api/me`, kirish, ro'yxat, profil): `+ email` (null bo'lishi mumkin), `email_verified` (boolean).
+Admin `users` ro'yxati: `+ email, email_verified`, qidiruv emailni ham qamraydi; foydalanuvchi o'chirilganda
+`email_otps` ham o'chadi. Ommaviy javoblarda (users/:id, leaderboard, izohlar, hashar, ko'ngillilar) email YO'Q.
 
 ### 5.1. v3 qo'shimchalari (docs/V3_PLAN.md 2-bo'lim)
 
@@ -223,6 +272,22 @@ xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.
 - Nishonlar mijozda `stats` dan hisoblanadi; ball = completed×10 + joined×3 + created×5 (reyting bilan bir xil).
 - Ulashish havolasi: `<sayt>/#/hashar/<id>`; kalendar: web — `.ics` fayl, APK — Google Calendar havolasi.
 
+### 6.2. Email oqimlari (frontend)
+
+- Ilova ochilganda `GET /api/config` (localStorage'da keshlanadi; 410 `email_required` kelsa ham yoqilgan deb belgilanadi).
+- `email_enabled` bo'lsa: ro'yxat 2 bosqich — (1) Ism, Email (majburiy, maydon ostida aniq xato), Telefon +998,
+  Parol (ko'rsatish/yashirish) → "Kod yuborish"; (2) 6 ta alohida katak (`inputmode="numeric"`,
+  `autocomplete="one-time-code"`, avtomatik o'tish, butun kodni joylash, Backspace orqaga), email + "O'zgartirish",
+  60 s teskari sanoqli "Kodni qayta yuborish", xatolar katak ostida → muvaffaqiyatda kirish va kutilayotgan amal davom etadi.
+  O'chiq bo'lsa — eski telefon ro'yxati.
+- Kirish: bitta "Telefon yoki email" maydoni + parol, "Parolni unutdingizmi?" → email → kod + yangi parol (2 marta) → kirish.
+- Emaili tasdiqlanmagan foydalanuvchi parol bilan kirgach — to'liq ekranli "Emailni tasdiqlang" (email → kod,
+  "Keyinroq" / Esc / Android "orqaga" bilan yopiladi); ko'rish sahifalarida yopsa bo'ladigan banner (sessiya davomida);
+  yozuvchi amallar (`requireVerified`) va API'dan kelgan har qanday 403 `email_unverified` shu bosqichni ochadi,
+  tasdiqlangach amal o'zi davom etadi.
+- Profil → Sozlamalar → "Email" kartasi: email + "Tasdiqlangan" belgisi ("O'zgartirish") yoki "Tasdiqlanmagan" +
+  "Email qo'shish" (o'sha kod komponenti). Admin foydalanuvchilar ro'yxatida email (✓ — tasdiqlangan).
+
 ## 7. Android APK (Capacitor 8)
 
 - `appId: uz.hasharchilar.app`, `appName: Hasharchilar`, `webDir: dist`, `android.adjustMarginsForEdgeToEdge: "auto"` (agar versiyada bor bo'lsa).
@@ -253,8 +318,11 @@ ixtiyoriy `ANDROID_KEYSTORE_BASE64`/`ANDROID_KEYSTORE_PASSWORD`/`ANDROID_KEY_ALI
 3. `deploy` (needs apk): URL qayta hisoblanadi; oddiy build + artefakt `dist/app/` ga (`publish=false` bo'lsa —
    saytdagi hozirgi APK); baza turi aniqlanadi (Worker'da D1 `DB` → D1,
    `HASHAR_DB` → DO, birinchi marta: D1 topiladi/yaratiladi, ruxsat bo'lmasa DO); `wrangler.deploy.json`;
-   R2 tekshiruvi; D1 rejimida `wrangler d1 migrations apply --remote`; `wrangler deploy`; `/api/health`,
-   baza (`/api/stats`, `/api/hashars`), `/api/app`, `/api/app/download`.
+   R2 tekshiruvi; D1 rejimida `wrangler d1 migrations apply --remote`; `wrangler deploy`; ixtiyoriy secret
+   `RESEND_API` bo'lsa — Worker secret'lari `RESEND_API_KEY` va `RESEND_FROM` (`Hasharchilar <no-reply@<domen>>`:
+   Resend'dagi tasdiqlangan domen, "hasharchilar" bo'lgani afzal; o'qib bo'lmasa / yo'q — `nfcstore.uz`);
+   `/api/health`, baza (`/api/stats`, `/api/hashars`), `/api/app`, `/api/app/download`.
+   `test` job'idagi `wrangler dev` lar `--var GEO_MOCK:1 --var EMAIL_MOCK:1` bilan.
 4. `release` (needs deploy, faqat `publish=true`): GitHub Release `hasharchilar-v1.0.N`.
 
 nfcstore resurslariga (Worker `nfcstore-uz`, D1 `DB`, R2 `nfcstore-uploads`) HECH QACHON tegilmaydi.
