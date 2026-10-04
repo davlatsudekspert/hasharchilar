@@ -8,7 +8,7 @@ import { useToast } from '../components/Toast.jsx';
 import { btn, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { hideSplash } from '../lib/native.js';
-import { closeAdmin } from '../lib/route.js';
+import { closeAdmin } from '../lib/router.js';
 import { cx, formatPhone } from '../lib/utils.js';
 import HasharsTab from './HasharsTab.jsx';
 import OverviewTab from './OverviewTab.jsx';

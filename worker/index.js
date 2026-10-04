@@ -7,8 +7,10 @@ import { bootstrapRoutes } from './bootstrap.js';
 import { authRoutes, optionalAuth } from './auth.js';
 import { DoDatabase } from './d1-adapter.js';
 import { HasharDB } from './do-db.js';
+import { geoRoutes } from './geo.js';
 import { getStats, hasharRoutes } from './hashars.js';
 import { mediaRoutes } from './media.js';
+import { socialRoutes } from './social.js';
 import { HttpError } from './validate.js';
 
 const app = new Hono();
@@ -72,6 +74,8 @@ app.get('/api/health', (c) => c.json({ ok: true }));
 app.get('/api/stats', getStats);
 app.route('/api', authRoutes); // /api/auth/*, /api/me
 app.route('/api/hashars', hasharRoutes);
+app.route('/api', socialRoutes); // /api/hashars/:id/comments, /api/comments/:id, /api/users/:id, /api/leaderboard
+app.route('/api/geo', geoRoutes); // /api/geo/search, /api/geo/reverse (Nominatim proksi + kesh)
 app.route('/api', mediaRoutes); // /api/media/*, /api/app, /api/app/download
 app.route('/api/admin', adminRoutes); // admin panel (faqat administratorlar)
 app.route('/api', bootstrapRoutes); // /api/bootstrap-admin — birinchi admin (bir martalik)

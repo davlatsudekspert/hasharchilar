@@ -122,3 +122,50 @@ export const volunteersLabel = (n) => `${n || 0} ko'ngilli`;
 export const osmLink = (lat, lng) => `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lng}#map=17/${lat}/${lng}`;
 
 export const cx = (...c) => c.filter(Boolean).join(' ');
+
+/** "3 daqiqa oldin" kabi nisbiy vaqt (UTC "…Z" yoki SQLite "YYYY-MM-DD HH:MM:SS" UTC). */
+export function timeAgo(iso) {
+  if (!iso) return '';
+  let s = String(iso);
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)) s = `${s.replace(' ', 'T')}Z`;
+  const t = Date.parse(s);
+  if (Number.isNaN(t)) return '';
+  const sec = Math.max(0, Math.round((Date.now() - t) / 1000));
+  if (sec < 60) return 'hozirgina';
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} daqiqa oldin`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `${h} soat oldin`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} kun oldin`;
+  return formatDay(iso);
+}
+
+/** Hashar boshlanishigacha qolgan vaqt: "3 kun qoldi", "Bugun", null (o'tib ketgan). */
+export function countdown(dateTime) {
+  const now = tashkentNow();
+  const d = String(dateTime || '');
+  if (!d || d < now) return null;
+  const today = now.slice(0, 10);
+  if (d.slice(0, 10) === today) return 'Bugun';
+  if (d.slice(0, 10) === tashkentTomorrow()) return 'Ertaga';
+  const days = Math.round((Date.parse(`${d.slice(0, 10)}T00:00Z`) - Date.parse(`${today}T00:00Z`)) / 86400000);
+  return `${days} kun qoldi`;
+}
+
+/** Sana qismlari kartadagi "kalendar varag'i" uchun: { day: "11", month: "APR" }. */
+const MONTHS_SHORT = ['YAN', 'FEV', 'MAR', 'APR', 'MAY', 'IYN', 'IYL', 'AVG', 'SEN', 'OKT', 'NOY', 'DEK'];
+export function dateBadge(iso) {
+  const [y, m, d] = String(iso || '').slice(0, 10).split('-').map(Number);
+  if (!y) return { day: '–', month: '' };
+  return { day: String(d), month: MONTHS_SHORT[m - 1] };
+}
+
+/** Ismdan barqaror rang indeksi (avatar fonlari uchun). */
+export function hashIndex(str, n) {
+  let h = 0;
+  for (const ch of String(str || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % n;
+}
+
+export const pluralTa = (n) => `${n || 0} ta`;

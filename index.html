@@ -8,13 +8,24 @@
       name="description"
       content="Mahallangizdagi tozalash va ko'kalamzorlashtirish hasharlarini xaritada toping, bir bosishda qo'shiling yoki o'zingiz e'lon qiling."
     />
-    <meta name="theme-color" content="#059669" />
-    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="color-scheme" content="light dark" />
     <meta name="format-detection" content="telephone=no" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
 
     <!-- Open Graph / ijtimoiy tarmoqlar -->
+    <!-- Tungi rejim: birinchi chizishdan oldin (oq "chaqnash" bo'lmasin) -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem('hashar_theme');
+          var d = p === 'dark' || (p !== 'light' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+          if (d && !/^#\/?admin/.test(location.hash)) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="hasharchilar.uz" />
     <meta property="og:locale" content="uz_UZ" />

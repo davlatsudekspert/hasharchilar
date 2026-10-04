@@ -40,14 +40,19 @@
         </provider>
     </application>
 
-    <!-- Ruxsatlar (SPEC 7) -->
-    <!-- API va xarita plitkalari -->
+    <!-- Ruxsatlar (SPEC 7, v3 plaginlari bilan mos) -->
+    <!-- API va xarita plitkalari (OpenFreeMap) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- "Yaqindagi hasharlar" va "Mening joylashuvim" (navigator.geolocation) -->
+    <!-- @capacitor/network: oflayn banner -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- @capacitor/geolocation: "Mening joyim", yaqin hasharlar (ish vaqtida so'raladi) -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Fayl tanlagichda "Oldin/Keyin" rasmini kamera bilan olish -->
+    <!-- @capacitor/camera: "Oldin/Keyin" va avatar rasmini kamera bilan olish (ish vaqtida so'raladi) -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- @capacitor/haptics: muhim amallarda yengil tebranish -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Galereya: tizim fayl tanlagichi ishlatiladi — saqlash ruxsati kerak emas -->
 
     <!-- Kamera/GPS bo'lmagan qurilmalarga ham o'rnatilsin -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />

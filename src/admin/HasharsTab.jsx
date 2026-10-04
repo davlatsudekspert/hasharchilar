@@ -152,7 +152,7 @@ export default function HasharsTab() {
                 onClick={() => setPreview(h)}
                 className="flex min-w-0 flex-1 items-center gap-3 rounded-xl text-left transition hover:bg-slate-50"
               >
-                <Thumb hashar={h} className="h-16 w-16" />
+                <Thumb hashar={h} className="h-16 w-16 shrink-0 rounded-xl" iconClass="h-7 w-7" />
                 <div className="min-w-0 flex-1">
                   <p className="line-clamp-1 font-bold text-slate-900">{h.title}</p>
                   <div className="mt-1 flex min-w-0 items-center gap-2">

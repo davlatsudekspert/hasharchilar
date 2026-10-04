@@ -8,14 +8,14 @@
         <item name="colorAccent">@color/colorAccent</item>
     </style>
 
-    <!-- WebView mavzusi. Sayt faqat yorug' (color-scheme: light), shuning uchun Light.
-         windowBackground emerald: eski WebView'larda (< 140) SystemBars status/navigatsiya
-         panellari ostini shu rang bilan to'ldiradi. -->
-    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- WebView mavzusi. DayNight: tizim tungi rejimida oyna foni ham to'q (values-night).
+         windowBackground: eski WebView'larda (< 140) SystemBars status/navigatsiya panellari
+         ostini shu rang bilan to'ldiradi — sayt sarlavhasi (oq / to'q yashil) bilan bir xil. -->
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
-        <item name="android:windowBackground">@color/splash_background</item>
+        <item name="android:windowBackground">@color/app_background</item>
         <item name="colorPrimary">@color/colorPrimary</item>
         <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
         <item name="colorAccent">@color/colorAccent</item>

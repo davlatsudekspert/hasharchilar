@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { adminPhones, isAdmin, isEnvAdmin, requireAuth } from './auth.js';
 import { HASHAR_SELECT, toDto } from './hashars.js';
 import { deletePhotos } from './media.js';
+import { deleteComment } from './social.js';
 import {
   ConflictError,
   ForbiddenError,
@@ -21,6 +22,7 @@ const PAGE_MAX = 100;
 const RECENT = 5;
 const USER_NOT_FOUND = 'Foydalanuvchi topilmadi';
 const HASHAR_NOT_FOUND = 'Hashar topilmadi';
+const COMMENT_NOT_FOUND = 'Izoh topilmadi';
 const ENV_ADMIN_LOCKED = "Bu administrator ADMIN_PHONES sozlamasi orqali tayinlangan — uni paneldan o'zgartirib bo'lmaydi";
 
 /** Faqat administratorlar (avval requireAuth: mehmon 401, bloklangan 403). */
@@ -89,7 +91,7 @@ function guardTarget(c, target, selfMessage) {
 /** HasharDTO + creator.phone (admin hamma telefonni ko'radi). */
 function adminHasharDto(r, uid) {
   const dto = toDto(r, uid);
-  dto.creator = { id: r.creator_id, name: r.creator_name, phone: r.creator_phone };
+  dto.creator = { ...dto.creator, phone: r.creator_phone };
   return dto;
 }
 
@@ -116,6 +118,7 @@ adminRoutes.get('/overview', async (c) => {
            (SELECT COUNT(*) FROM hashars WHERE status = 'COMPLETED') AS completed,
            (SELECT COUNT(DISTINCT user_id) FROM volunteers) AS volunteers,
            (SELECT COUNT(*) FROM hashar_media) AS media,
+           (SELECT COUNT(*) FROM comments) AS comments,
            (SELECT COUNT(*) FROM users WHERE created_at >= datetime('now', '-7 days')) AS signups_7d,
            (SELECT COUNT(*) FROM hashars WHERE created_at >= datetime('now', '-7 days')) AS hashars_7d`,
       )
@@ -192,16 +195,24 @@ adminRoutes.post('/users/:id/role', async (c) => {
   return c.json({ user: adminUserDto(await loadUser(db, id), c.env) });
 });
 
-// DELETE /api/admin/users/:id — foydalanuvchi, sessiyalari, qatnashuvlari, hasharlari (+ rasmlari R2 dan)
+// DELETE /api/admin/users/:id — foydalanuvchi, sessiyalari, qatnashuvlari, hasharlari, izohlari
+// (+ hashar rasmlari va avatar R2 dan)
 adminRoutes.delete('/users/:id', async (c) => {
   const db = c.env.DB;
   const id = parseId(c.req.param('id'), USER_NOT_FOUND);
   guardTarget(c, await loadUser(db, id), "O'zingizni o'chira olmaysiz");
   const own = 'SELECT id FROM hashars WHERE creator_id = ?1';
   // Bitta tranzaksiya; rasm kalitlari ham shu tranzaksiya ichida olinadi (orada qo'shilgani qolib ketmasin)
-  const [media, , , , , delUser] = await db.batch([
-    db.prepare(`SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})`).bind(id),
+  // Bog'liq qatorlar (izohlar ham) oldindan o'chiriladi: meta.changes FK kaskadi bilan ortib ketmasin
+  const [media, , , , , , delUser] = await db.batch([
+    db
+      .prepare(
+        `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
+         UNION ALL SELECT avatar_key FROM users WHERE id = ?1 AND avatar_key IS NOT NULL`,
+      )
+      .bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
+    db.prepare(`DELETE FROM comments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare(`DELETE FROM hashar_media WHERE hashar_id IN (${own})`).bind(id),
     db.prepare(`DELETE FROM volunteers WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare('DELETE FROM hashars WHERE creator_id = ?1').bind(id),
@@ -245,13 +256,21 @@ adminRoutes.get('/hashars', async (c) => {
 adminRoutes.delete('/hashars/:id', async (c) => {
   const db = c.env.DB;
   const id = parseId(c.req.param('id'), HASHAR_NOT_FOUND);
-  const [media, , , delHashar] = await db.batch([
+  const [media, , , , delHashar] = await db.batch([
     db.prepare('SELECT r2_key FROM hashar_media WHERE hashar_id = ?1').bind(id),
+    db.prepare('DELETE FROM comments WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM hashar_media WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM volunteers WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM hashars WHERE id = ?1').bind(id),
   ]);
   if (delHashar.meta.changes !== 1) throw new NotFoundError(HASHAR_NOT_FOUND);
   await deletePhotos(c.env.PHOTOS, media.results.map((m) => m.r2_key));
+  return c.json({ ok: true });
+});
+
+// DELETE /api/admin/comments/:id — istalgan izohni o'chirish
+adminRoutes.delete('/comments/:id', async (c) => {
+  const id = parseId(c.req.param('id'), COMMENT_NOT_FOUND);
+  if (!(await deleteComment(c.env.DB, id))) throw new NotFoundError(COMMENT_NOT_FOUND);
   return c.json({ ok: true });
 });

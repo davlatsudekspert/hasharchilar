@@ -1,15 +1,19 @@
 // Autentifikatsiya: parol xeshi (PBKDF2), sessiyalar, middleware va /api/auth/* marshrutlari.
 import { Hono } from 'hono';
-import { limitAuth, limitLoginPhone } from './ratelimit.js';
+import { limitAuth, limitLoginPhone, limitProfile } from './ratelimit.js';
+import { avatarUrl, deletePhotos, readPhoto, storePhoto } from './media.js';
 import {
   AuthError,
   ConflictError,
   ForbiddenError,
   ValidationError,
   PASSWORD_MAX,
+  parseBio,
+  parseDistrict,
   parseName,
   parsePassword,
   parsePhone,
+  readForm,
   readJson,
   toIso,
 } from './validate.js';
@@ -98,7 +102,8 @@ const purgeExpired = (db) => db.prepare("DELETE FROM sessions WHERE expires_at <
 async function getSessionUser(db, tokenHash) {
   const row = await db
     .prepare(
-      `SELECT u.id, u.name, u.phone, u.role, u.blocked_at, u.created_at, (s.expires_at <= datetime('now')) AS expired
+      `SELECT u.id, u.name, u.phone, u.role, u.blocked_at, u.created_at, u.bio, u.district, u.avatar_key,
+              (s.expires_at <= datetime('now')) AS expired
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?1`,
     )
@@ -109,7 +114,8 @@ async function getSessionUser(db, tokenHash) {
     await db.prepare('DELETE FROM sessions WHERE token_hash = ?1').bind(tokenHash).run();
     return null;
   }
-  return { id: row.id, name: row.name, phone: row.phone, role: row.role, blocked_at: row.blocked_at, created_at: row.created_at };
+  const { expired, ...user } = row;
+  return user;
 }
 
 // ---------- Administratorlar ----------
@@ -148,7 +154,13 @@ export const userDto = (u, env) => ({
   phone: u.phone,
   created_at: toIso(u.created_at),
   is_admin: isAdmin(u, env),
+  bio: u.bio ?? '',
+  district: u.district ?? '',
+  avatar_url: avatarUrl(u.avatar_key),
 });
+
+// Foydalanuvchi obyekti uchun ustunlar (userDto ga kerakli hammasi)
+const USER_COLS = 'id, name, phone, role, blocked_at, created_at, bio, district, avatar_key';
 
 // ---------- Middleware ----------
 
@@ -203,7 +215,7 @@ authRoutes.post('/auth/register', async (c) => {
     // Foydalanuvchi va sessiya bitta tranzaksiyada
     const [ins] = await db.batch([
       db
-        .prepare('INSERT INTO users (phone, name, password_hash) VALUES (?1, ?2, ?3) RETURNING id, name, phone, role, created_at')
+        .prepare(`INSERT INTO users (phone, name, password_hash) VALUES (?1, ?2, ?3) RETURNING ${USER_COLS}`)
         .bind(phone, name, passwordHash),
       db
         .prepare(`INSERT INTO sessions (token_hash, user_id, expires_at)
@@ -239,7 +251,7 @@ authRoutes.post('/auth/login', async (c) => {
 
   const row = phone
     ? await db
-        .prepare('SELECT id, name, phone, role, blocked_at, created_at, password_hash FROM users WHERE phone = ?1')
+        .prepare(`SELECT ${USER_COLS}, password_hash FROM users WHERE phone = ?1`)
         .bind(phone)
         .first()
     : null;
@@ -277,4 +289,72 @@ authRoutes.get('/me', requireAuth, async (c) => {
     user: userDto(user, c.env),
     stats: { created: stats.created, joined: stats.joined, completed: stats.completed },
   });
+});
+
+// POST /api/me/profile — multipart: name?, bio?, district?, avatar? (rasm ≤ 5 MB), remove_avatar? ('1')
+// Yuborilmagan maydon o'zgarmaydi. Avatar almashtirilsa/o'chirilsa eski fayl R2 dan o'chiriladi.
+authRoutes.post('/me/profile', requireAuth, async (c) => {
+  const user = c.get('user');
+  const db = c.env.DB;
+  const form = await readForm(c);
+  const has = (k) => typeof form.get(k) === 'string';
+  const sets = [];
+  const params = [];
+  const set = (col, val) => {
+    params.push(val);
+    sets.push(`${col} = ?${params.length + 1}`); // ?1 — foydalanuvchi ID si
+  };
+  if (has('name')) set('name', parseName(form.get('name')));
+  if (has('bio')) set('bio', parseBio(form.get('bio')));
+  if (has('district')) set('district', parseDistrict(form.get('district')));
+  const photo = await readPhoto(form.get('avatar'));
+  const removeAvatar = !photo && ['1', 'true'].includes(String(form.get('remove_avatar') ?? ''));
+  if (!sets.length && !photo && !removeAvatar) throw new ValidationError("O'zgartirish uchun ma'lumot yuborilmadi");
+  // Limit faqat to'g'ri so'rovlarga qo'llanadi
+  await limitProfile(c, user.id);
+
+  const key = photo ? await storePhoto(c.env.PHOTOS, photo, 'avatars') : null;
+  if (photo || removeAvatar) set('avatar_key', key);
+  let old;
+  try {
+    // Bitta tranzaksiya: eski avatar kaliti aynan shu yangilanishdan oldingi qiymat
+    [old] = await db.batch([
+      db.prepare('SELECT avatar_key FROM users WHERE id = ?1').bind(user.id),
+      db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?1`).bind(user.id, ...params),
+    ]);
+  } catch (err) {
+    if (key) await deletePhotos(c.env.PHOTOS, [key]);
+    if (/CHECK constraint failed/i.test(String(err?.message))) throw new ValidationError("Ma'lumotlar noto'g'ri");
+    throw err;
+  }
+  const oldKey = old.results[0]?.avatar_key;
+  if ((photo || removeAvatar) && oldKey && oldKey !== key) await deletePhotos(c.env.PHOTOS, [oldKey]);
+  const row = await db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?1`).bind(user.id).first();
+  return c.json({ user: userDto(row, c.env) });
+});
+
+// POST /api/me/password — {current_password, new_password} → {ok: true}
+// Joriy parol tekshiriladi (kirishdagi kabi limit: IP va telefon bo'yicha — umumiy hisob, chunki bu ham
+// parol tanlash imkoniyati). Muvaffaqiyatda joriy sessiyadan boshqa barcha sessiyalar o'chiriladi.
+// Parollar hech qachon log'ga yozilmaydi.
+authRoutes.post('/me/password', requireAuth, async (c) => {
+  const user = c.get('user');
+  const db = c.env.DB;
+  await limitAuth(c);
+  const body = await readJson(c);
+  const current = typeof body.current_password === 'string' ? body.current_password : '';
+  if (!current) throw new ValidationError('Joriy parolni kiriting');
+  const next = parsePassword(body.new_password);
+  await limitLoginPhone(c, user.phone);
+
+  const row = await db.prepare('SELECT password_hash FROM users WHERE id = ?1').bind(user.id).first();
+  const ok = row && (await verifyPassword(current.slice(0, PASSWORD_MAX + 1), row.password_hash));
+  if (!ok || current.length > PASSWORD_MAX) throw new AuthError("Joriy parol noto'g'ri");
+
+  const passwordHash = await hashPassword(next);
+  await db.batch([
+    db.prepare('UPDATE users SET password_hash = ?2 WHERE id = ?1').bind(user.id, passwordHash),
+    db.prepare('DELETE FROM sessions WHERE user_id = ?1 AND token_hash <> ?2').bind(user.id, c.get('tokenHash')),
+  ]);
+  return c.json({ ok: true });
 });

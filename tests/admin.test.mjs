@@ -54,6 +54,7 @@ describe('Admin panel', () => {
       ['POST', `/api/admin/users/${plain.user.id}/role`],
       ['DELETE', `/api/admin/users/${plain.user.id}`],
       ['DELETE', '/api/admin/hashars/1'],
+      ['DELETE', '/api/admin/comments/1'],
     ];
     for (const [method, path] of routes) {
       const g = await api(path, { method, json: method === 'POST' ? { role: 'admin' } : undefined });
@@ -70,7 +71,7 @@ describe('Admin panel', () => {
   test('overview: shakli', async () => {
     const r = await api('/api/admin/overview', { token: admin.token });
     assert.equal(r.status, 200, JSON.stringify(r.data));
-    for (const k of ['users', 'admins', 'blocked', 'hashars', 'pending', 'completed', 'volunteers', 'media', 'signups_7d', 'hashars_7d']) {
+    for (const k of ['users', 'admins', 'blocked', 'hashars', 'pending', 'completed', 'volunteers', 'media', 'comments', 'signups_7d', 'hashars_7d']) {
       assert.equal(typeof r.data[k], 'number', k);
     }
     assert.ok(r.data.users >= 2);
@@ -212,6 +213,15 @@ describe('Admin panel', () => {
     assert.equal(j.data.volunteer_count, 2);
     const photo = own.data.before_url;
     assert.equal((await api(photo)).status, 200);
+    // v3: avatar va boshqaning hashariga izoh
+    const av = new FormData();
+    av.append('avatar', new Blob([PNG_AFTER], { type: 'image/png' }), 'a.png');
+    const prof = await api('/api/me/profile', { method: 'POST', token: victim.token, form: av });
+    assert.equal(prof.status, 200, JSON.stringify(prof.data));
+    const avatar = prof.data.user.avatar_url;
+    assert.equal((await api(avatar)).status, 200);
+    const cm = await api(`/api/hashars/${theirs.data.id}/comments`, { method: 'POST', token: victim.token, json: { body: 'Qurbon izohi' } });
+    assert.equal(cm.status, 201);
 
     const list = await api(`/api/admin/users?q=${encodeURIComponent(`O'chiriladigan ${RUN}`)}`, { token: admin.token });
     assert.equal(list.data.items[0].created_count, 1);
@@ -223,6 +233,9 @@ describe('Admin panel', () => {
 
     assert.equal((await api(`/api/hashars/${own.data.id}`)).status, 404, "qurbonning hashari o'chdi");
     assert.equal((await api(photo)).status, 404, "rasm R2 dan o'chdi");
+    assert.equal((await api(avatar)).status, 404, "avatar R2 dan o'chdi");
+    assert.deepEqual((await api(`/api/hashars/${theirs.data.id}/comments`)).data, [], "izohlari o'chdi");
+    assert.equal((await api(`/api/users/${victim.user.id}`)).status, 404);
     const t = await api(`/api/hashars/${theirs.data.id}`);
     assert.equal(t.data.volunteer_count, 1, "qatnashuv o'chdi");
     assert.ok(!t.data.volunteers.some((v) => v.id === victim.user.id));
@@ -255,7 +268,8 @@ describe('Admin panel', () => {
     const [h] = l.data.items;
     assert.equal(h.id, id);
     assert.equal(h.status, 'COMPLETED');
-    assert.deepEqual(h.creator, { id: owner.user.id, name: `Tashkilotchi ${RUN}`, phone: owner.phone });
+    assert.deepEqual(h.creator, { id: owner.user.id, name: `Tashkilotchi ${RUN}`, avatar_url: null, phone: owner.phone });
+    assert.equal(h.category, 'cleaning');
     assert.ok(h.before_url && h.after_url);
     // Tashkilotchi ismi bo'yicha ham topiladi
     const byOwner = await api(`/api/admin/hashars?q=${encodeURIComponent(`Tashkilotchi ${RUN}`)}`, { token: admin.token });
@@ -270,5 +284,42 @@ describe('Admin panel', () => {
     assert.equal((await api(`/api/hashars/${id}`)).status, 404);
     for (const u of urls) assert.equal((await api(u)).status, 404, `${u} R2 dan o'chdi`);
     assert.equal((await api(`/api/admin/hashars/${id}`, { method: 'DELETE', token: admin.token })).status, 404);
+  });
+
+  test("izohlar: admin istalgan izohni o'chiradi (/api/admin/comments/:id va /api/comments/:id)", async () => {
+    const owner = await register(`Izoh egasi ${RUN}`);
+    const h = await api('/api/hashars', { method: 'POST', token: owner.token, form: hasharForm({}, null) });
+    assert.equal(h.status, 201);
+    const post = (body) => api(`/api/hashars/${h.data.id}/comments`, { method: 'POST', token: plain.token, json: { body } });
+    const c1 = await post('Nojoiz izoh 1');
+    const c2 = await post('Nojoiz izoh 2');
+    assert.equal(c1.status, 201);
+    assert.equal(c2.status, 201);
+
+    const d1 = await api(`/api/admin/comments/${c1.data.id}`, { method: 'DELETE', token: admin.token });
+    assert.equal(d1.status, 200, JSON.stringify(d1.data));
+    assert.deepEqual(d1.data, { ok: true });
+    assert.equal((await api(`/api/admin/comments/${c1.data.id}`, { method: 'DELETE', token: admin.token })).status, 404);
+    assert.equal((await api('/api/admin/comments/abc', { method: 'DELETE', token: admin.token })).status, 404);
+    // Umumiy marshrut: admin boshqaning izohini ham o'chira oladi
+    const d2 = await api(`/api/comments/${c2.data.id}`, { method: 'DELETE', token: admin.token });
+    assert.equal(d2.status, 200);
+    assert.deepEqual((await api(`/api/hashars/${h.data.id}/comments`)).data, []);
+  });
+
+  test("reyting: bloklangan foydalanuvchi ko'rinmaydi", async () => {
+    const u = await register(`Reyting blok ${RUN}`);
+    const h = await api('/api/hashars', { method: 'POST', token: u.token, form: hasharForm({}, null) });
+    assert.equal(h.status, 201);
+    const fd = new FormData();
+    fd.append('photo', new Blob([PNG_AFTER], { type: 'image/png' }), 'keyin.png');
+    assert.equal((await api(`/api/hashars/${h.data.id}/complete`, { method: 'POST', token: u.token, form: fd })).status, 200);
+    const before = await api('/api/leaderboard?period=month');
+    const last = before.data[before.data.length - 1];
+    const room = before.data.length < 50 || last.score < 15;
+    if (room) assert.ok(before.data.some((e) => e.user.id === u.user.id), "blokdan oldin reytingda bor");
+    assert.equal((await api(`/api/admin/users/${u.user.id}/block`, { method: 'POST', token: admin.token })).status, 200);
+    const after = await api('/api/leaderboard?period=month');
+    assert.ok(!after.data.some((e) => e.user.id === u.user.id), "bloklangan reytingda yo'q");
   });
 });

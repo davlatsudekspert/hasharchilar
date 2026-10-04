@@ -96,6 +96,7 @@ jobs:
         run: npm run db:local
 
       # ADMIN_PHONES — soxta test raqami (tests/admin.test.mjs shu raqam bilan admin bo'lib kiradi)
+      # GEO_MOCK:1 — /api/geo/* haqiqiy Nominatim o'rniga deterministik soxta javob beradi (testlar tarmoqqa chiqmaydi)
       - name: wrangler dev — D1 (:8787) va Durable Object (:8788) rejimlari
         env:
           TEST_ADMIN_PHONES: '+998900000099'
@@ -103,9 +104,9 @@ jobs:
           set -euo pipefail
           node scripts/wrangler-config.mjs --storage "do"
           nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --inspector-port 9229 \
-            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
+            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
           nohup npx wrangler dev --config wrangler.deploy.json --port 8788 --ip 127.0.0.1 --inspector-port 9230 \
-            --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
+            --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
           for port in 8787 8788; do
             ready=""
             for i in $(seq 1 60); do

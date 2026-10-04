@@ -93,3 +93,36 @@ export function limitJoin(c, userId) {
     "Juda ko'p qo'shilish/chiqish. Birozdan so'ng qayta urinib ko'ring",
   );
 }
+
+/** Izoh yozish: foydalanuvchi bo'yicha 20 ta / soat. */
+export function limitComment(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `comment:${userId}`,
+    20,
+    60 * 60,
+    "Bir soatda ko'pi bilan 20 ta izoh yozish mumkin. Birozdan so'ng urinib ko'ring",
+  );
+}
+
+/** Profilni yangilash (avatar yuklash): foydalanuvchi bo'yicha 20 ta / soat. */
+export function limitProfile(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `profile:${userId}`,
+    20,
+    60 * 60,
+    "Profil juda ko'p yangilandi. Birozdan so'ng qayta urinib ko'ring",
+  );
+}
+
+/** Manzil qidirish / koordinata → manzil: IP bo'yicha 30 ta / daqiqa (Nominatim qoidalari). */
+export function limitGeo(c) {
+  return rateLimit(
+    c.env.DB,
+    `geo:${clientIp(c)}`,
+    30,
+    60,
+    "Manzil qidiruvi juda ko'p. Bir daqiqadan so'ng qayta urinib ko'ring",
+  );
+}

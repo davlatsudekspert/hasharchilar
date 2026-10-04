@@ -12,6 +12,15 @@ export default defineConfig({
     target: 'es2019',
     cssTarget: 'chrome87',
     sourcemap: false,
-    chunkSizeWarningLimit: 800,
+    // MapLibre GL (~1 MB) — alohida lazy chunk, faqat xarita ochilganda yuklanadi
+    chunkSizeWarningLimit: 1100,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
+          return undefined;
+        },
+      },
+    },
   },
 });

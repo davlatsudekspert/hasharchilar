@@ -32,8 +32,9 @@ Batafsil texnik shartnoma: [`SPEC.md`](./SPEC.md).
    users, sessions, hashars, hashar_media, volunteers, rate_limits
 ```
 
-- **Stek:** React 18 · Vite 6 · Tailwind CSS v4 · Leaflet 1.9 (OpenStreetMap plitkalari) · Hono 4 ·
-  Cloudflare Workers + D1 / SQLite Durable Object + R2 · Capacitor 8 (Android).
+- **Stek:** React 18 · Vite 6 · Tailwind CSS v4 · MapLibre GL 5 + OpenFreeMap (kalitsiz vektor xarita) ·
+  Inter / Manrope (fontsource, bundle ichida) · Hono 4 · Cloudflare Workers + D1 / SQLite Durable Object + R2 ·
+  Capacitor 8 (Android: app, camera, geolocation, haptics, network, preferences, share, splash-screen, status-bar).
 - **Autentifikatsiya:** ism + telefon (+998…) + parol. Parol PBKDF2-SHA256 (100 000 iteratsiya) bilan saqlanadi.
   Sessiya tokeni `localStorage['hashar_token']` da turadi va `Authorization: Bearer <token>` sarlavhasida yuboriladi.
   Cookie ishlatilmaydi. Sessiya 90 kun amal qiladi.
@@ -71,25 +72,71 @@ hasharchilar/
 ├── package.json             # web + worker + capacitor (bitta paket)
 ├── wrangler.jsonc           # Worker hasharchilar-api: assets ./dist (ASSETS), D1 (DB), DO (HASHAR_DB), R2 (PHOTOS)
 ├── capacitor.config.json    # uz.hasharchilar.app, webDir dist
-├── migrations/              # 0001_init.sql, 0002_admin.sql (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
+├── migrations/              # 0001_init.sql, 0002_admin.sql, 0003_v3.sql (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
 ├── schema.sql               # migratsiyalar birlashtirilgani (qulaylik uchun)
 ├── seed.sql                 # FAQAT lokal namuna ma'lumot (parol: demo1234)
-├── worker/                  # Hono backend (+ admin.js, do-db.js, d1-adapter.js, migrations.js, sql-split.js)
+├── worker/                  # Hono backend (+ admin.js, social.js — izoh/profil/reyting, geo.js — Nominatim proksi,
+│                            #   do-db.js, d1-adapter.js, migrations.js, sql-split.js)
 ├── scripts/wrangler-config.mjs # wrangler.jsonc → wrangler.deploy.json (--storage d1|do)
 ├── scripts/site-url.sh      # CI: https://<worker>.<subdomen>.workers.dev manzili
 ├── tests/api.test.mjs       # API testi (node:test, wrangler dev ga qarshi; D1 va DO rejimida)
 ├── tests/admin.test.mjs     # admin panel API testi (server ADMIN_PHONES bilan); tests/helpers.mjs — umumiy
-├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config
+├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config (fixtures/: seed-v2.sql)
 ├── src/                     # React (sayt va APK uchun bir xil)
-│   ├── lib/                 #   config, api, auth, image, map, native, backButton, utils
-│   ├── components/          #   Header, Hero, Tabs, MapView, HasharCard, HasharDetail,
-│   │                        #   CreateHasharModal (4 bosqich), AuthModal, ProfileModal, ...
-│   └── admin/               #   admin panel (#admin, alohida lazy bundle)
+│   ├── lib/                 #   router (hash), store (kesh), theme, actions, api, auth, native, map, meta, utils
+│   ├── pages/               #   Home, Map, List, Hashar, Create, Results, Leaderboard, Profile, User, About,
+│   │                        #   Login, NotFound — har biri alohida sahifa (#/...)
+│   ├── components/          #   Header, TabBar, Footer, HasharCard, Comments, PhotoInput, ProfileParts, ui, icons
+│   │   └── map/             #   HasharMap (klaster), MiniMap, LocationPicker — lazy (MapLibre faqat kerak bo'lganda)
+│   └── admin/               #   admin panel (#admin / #/admin, alohida lazy bundle)
 ├── public/                  # favicon, ikonlar, og-image, demo/ (seed rasmlari)
 ├── android/                 # Capacitor Android loyihasi (commit qilinadi)
 ├── resources/, scripts/     # ikonka/splash manbalari va generatori
-└── docs/screenshots/        # ekran rasmlari (mobil va desktop)
+└── docs/screenshots/        # ekran rasmlari: v3-*.png (mobil 390px, desktop 1366px, yorug' va tungi)
 ```
+
+## Frontend (v3): sahifalar va dizayn
+
+Hash router (`src/lib/router.js`) — sayt va APK da bir xil, "orqaga" tugmasi brauzer tarixi bilan ishlaydi:
+
+| Manzil | Sahifa |
+|---|---|
+| `#/` | Bosh sahifa: hero + jonli statistika, kategoriyalar, yaqinlashayotgan hasharlar karuseli, "Qanday ishlaydi", Oldin/Keyin vitrina, top ko'ngillilar, APK bloki |
+| `#/xarita` | To'liq ekran MapLibre xarita: klasterlar, holat va kategoriya filtrlari, "Mening joyim", mobilda pastki panel (karusel ↔ ro'yxat), desktopda chap ro'yxat |
+| `#/hasharlar` | Ro'yxat: qidiruv, holat, kategoriya, sana oralig'i, masofa (mendan N km), saralash, setka/ro'yxat ko'rinishi, tortib yangilash |
+| `#/hashar/:id` | Hashar sahifasi: rasm yoki Oldin/Keyin slayder, mini xarita, progress (`max_volunteers`), ko'ngillilar, izohlar, ulashish, kalendar (.ics / Google Calendar), Google/Yandex yo'l ko'rsatish, egasi uchun yakunlash/o'chirish |
+| `#/yaratish` | 4 qadamli e'lon: kategoriya kartalari → xaritada pin + manzil qidiruvi + avtomatik manzil (reverse geocode) → sana/vaqt, ko'ngillilar soni, narsalar → "Oldin" rasmi (kamera/galereya) va tekshirish; qoralama saqlanadi |
+| `#/natijalar` | Oldin/Keyin galereya |
+| `#/reyting` | Reyting: shu oy / umumiy, podium (top-3) |
+| `#/profil` | Profilim: avatar, bio, tuman, statistika, daraja, nishonlar, mening hasharlarim, sozlamalar (mavzu, parolni o'zgartirish, admin, chiqish) |
+| `#/u/:id` | Ommaviy profil (telefon ko'rsatilmaydi) |
+| `#/haqida` | Loyiha haqida + FAQ |
+| `#/kirish` | Kirish / ro'yxatdan o'tish (amallar uchun modal ham bor) |
+| `#admin`, `#/admin` | Admin panel |
+
+- **Dizayn:** emerald asosiy rang, amber faqat asosiy CTA va "kutilmoqda" pinlari uchun; semantik rang tokenlari
+  (`src/index.css`, `--c-*` → Tailwind `bg-surface`, `text-ink` ...). **Tungi rejim**: tizimga ergashadi yoki
+  qo'lda (`localStorage['hashar_theme']`), birinchi chizishdan oldin qo'llanadi; xarita ham `liberty` ↔ `dark`
+  uslubiga o'tadi. Sahifa o'tish animatsiyalari, skeletlar, `prefers-reduced-motion` hurmat qilinadi.
+- **Navigatsiya:** desktopda yuqori menyu, mobil va APK da pastki tab bar (Bosh · Xarita · ＋ · Natijalar · Profil),
+  safe-area hisobga olinadi.
+- **Xarita:** MapLibre GL + OpenFreeMap (`https://tiles.openfreemap.org/styles/liberty`, tungi — `/styles/dark`),
+  atributsiya doim ko'rinadi ("© OpenFreeMap © OpenMapTiles © OpenStreetMap"). MapLibre (~1 MB) alohida lazy
+  chunk — bosh sahifa tez ochiladi. Manzil qidiruvi va reverse geocode faqat worker proksi orqali
+  (`/api/geo/search`, `/api/geo/reverse`); xizmat ishlamasa manzil qo'lda kiritiladi.
+- **Kesh:** `src/lib/store.js` — sahifalar orasida ma'lumot darhol ko'rinadi, orqa fonda yangilanadi; amallardan
+  keyin tegishli kalitlar (`hashars`, `hashar:<id>`, `stats`, `leaderboard`...) qayta yuklanadi.
+- **Ulashish havolasi:** `<sayt>/#/hashar/<id>` (APK da sayt domeni bilan).
+
+Ekran rasmlari (`docs/screenshots/`, lokal `wrangler dev` + Playwright E2E dan):
+
+| Mobil (390px) | | Desktop (1366px) |
+|---|---|---|
+| ![Bosh sahifa](docs/screenshots/v3-mobile-home.jpg) | ![Tungi rejim](docs/screenshots/v3-mobile-home-dark.jpg) | ![Bosh sahifa](docs/screenshots/v3-desktop-home.jpg) |
+| ![Xarita](docs/screenshots/v3-mobile-map.jpg) | ![Hashar](docs/screenshots/v3-mobile-hashar.jpg) | ![Xarita](docs/screenshots/v3-desktop-map.jpg) |
+| ![Joy tanlash](docs/screenshots/v3-mobile-create-location.jpg) | ![Oldin/Keyin](docs/screenshots/v3-mobile-hashar-dark.jpg) | ![Hashar (tungi)](docs/screenshots/v3-desktop-hashar-dark.jpg) |
+| ![Profil](docs/screenshots/v3-mobile-profile.jpg) | ![Reyting](docs/screenshots/v3-mobile-leaderboard.jpg) | ![Yaratish](docs/screenshots/v3-desktop-create.jpg) |
+| ![Natijalar](docs/screenshots/v3-mobile-results.jpg) | ![Sozlamalar](docs/screenshots/v3-mobile-settings.jpg) | ![Hasharlar](docs/screenshots/v3-desktop-list.jpg) ![Admin](docs/screenshots/v3-desktop-admin.jpg) |
 
 ## Lokal ishga tushirish
 
@@ -133,13 +180,13 @@ boshlanadi, migratsiyalar birinchi so'rovda avtomatik qo'llanadi.
 ### Testlar
 
 ```bash
-npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 &   # boshqa terminalda
+npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 &   # boshqa terminalda
 npm run test:api                   # tests/api.test.mjs + tests/admin.test.mjs (BASE_URL bilan boshqa manzil)
 
 # Durable Object rejimi (alohida port va saqlash papkasi):
 node scripts/wrangler-config.mjs --storage do
 npx wrangler dev --config wrangler.deploy.json --port 8788 --persist-to .wrangler/state-do-test \
-  --var ADMIN_PHONES:+998900000099 &
+  --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 &
 STORAGE=do BASE_URL=http://localhost:8788 npm run test:api
 
 npm run test:storage               # server kerak emas: DO adapteri = D1, migratsiyalar, wrangler-config
@@ -149,6 +196,10 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
 - Admin testlari (`tests/admin.test.mjs`) server **`ADMIN_PHONES`** bilan ishga tushgan bo'lishini talab qiladi:
   `+998900000099` — soxta test raqami (boshqasi uchun `ADMIN_PHONE=+998... npm run test:api`). Bu raqam bilan
   hisob bo'lmasa ro'yxatdan o'tiladi, bo'lsa kiriladi (parol `admin-test-123`). `npm run dev:api` ham shu raqamni beradi.
+- **`GEO_MOCK:1`** — `/api/geo/*` haqiqiy Nominatim o'rniga deterministik soxta javob beradi (testlar tarmoqqa
+  chiqmaydi; javobda `x-geo-source: mock` header'i). Server usiz ishga tushgan bo'lsa geo testlarining faqat
+  validatsiya qismi bajariladi, qolganlari o'tkazib yuboriladi. `npm run dev:api` mock'siz — lokal dev'da haqiqiy
+  Nominatim ishlatiladi. Production'da `GEO_MOCK` hech qachon o'rnatilmaydi.
 - 300+ eski hasharli test eski sanali qatorlarni `wrangler d1 execute` bilan yozadi, shuning uchun DO
   rejimida (`STORAGE=do`) o'tkazib yuboriladi.
 - `/api/app` testi `dist/app/` ga qaraydi: `dist/app/hasharchilar.apk` + `version.json` bo'lsa "mavjud"
@@ -157,7 +208,9 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
   natijalar, `meta.changes`/`last_row_id` va xato matnlari aynan bir xilligini, `batch` atomarligini,
   tashqi kalit / `ON DELETE CASCADE` ni va qayta ishga tushganda migratsiyalar takrorlanmasligini tekshiradi.
   Yangilanish testi: `0001` dan keyin `seed.sql` (+ sessiya va limit qatorlari) yoziladi, so'ng qolgan
-  migratsiyalar birma-bir qo'llanadi — har biri ma'lumotli bazada o'tishi shart.
+  migratsiyalar birma-bir qo'llanadi — har biri ma'lumotli bazada o'tishi shart. `seed.sql` eng yangi sxemaga
+  yozilgani uchun `tests/fixtures/seed-v2.sql` (0003 dan oldingi namuna) ham ishlatiladi: `0002` va `0003_v3`
+  albatta to'la jadvallarda sinaladi (yangi ustunlarning DEFAULT qiymatlari ham tekshiriladi).
 
 ## Android ilova (APK) ni lokal qurish
 
@@ -191,12 +244,17 @@ cd android && ./gradlew assembleRelease -PversionCode=3 -PversionName=1.0.3
 
   `storeFile` yo'li `android/app/` papkasiga nisbatan yoziladi. `*.jks`, `*.keystore` va `key.properties`
   `.gitignore` da turibdi, ular **hech qachon commit qilinmaydi**.
-- Native imkoniyatlar:
-  - Android "orqaga" tugmasi ochiq oynani yopadi, oyna ochiq bo'lmasa ilovadan chiqadi;
-  - status bar emerald rangda, safe-area hisobga olinadi;
-  - splash ekran ma'lumot yuklangach yopiladi (eng ko'pi 4 soniya);
-  - rasm uchun "Kamera" (kamerani ochadi, CAMERA ruxsati so'raladi) va "Galereya" tugmalari bor;
-  - joylashuv ruxsati "Yaqindagi hasharlar" va "Mening joylashuvim" bosilganda so'raladi;
+- Native imkoniyatlar (Capacitor plaginlari, web'da zaxira bilan):
+  - Android "orqaga" tugmasi: ochiq oyna → sahifa tarixi → (bosh sahifada) ilovadan chiqish;
+  - status bar va oyna foni mavzuga mos (yorug' / tungi, `values-night`), edge-to-edge, safe-area CSS orqali;
+  - splash: gradient fon + logo (Android 12+ — tizim splash'i), ma'lumot yuklangach yopiladi (eng ko'pi 3 soniya);
+  - "Kamera" — `@capacitor/camera` (ruxsat ish vaqtida so'raladi; plagin ishlamasa tizim kamerasi), "Galereya" — fayl tanlagich;
+  - "Mening joyim" — `@capacitor/geolocation` (ruxsat so'raladi, rad etilsa tushunarli xabar), web'da `navigator.geolocation`;
+  - `@capacitor/haptics` — qo'shilish, e'lon, yakunlash kabi amallarda yengil tebranish;
+  - `@capacitor/network` — internet yo'qolsa "oflayn" banner, tiklanganda ma'lumotlar yangilanadi;
+  - `@capacitor/share` — tizim "Ulashish" oynasi (web'da `navigator.share` yoki havolani nusxalash);
+  - `@capacitor/preferences` — tokenning zaxira nusxasi (asosiy joyi baribir `localStorage['hashar_token']`);
+  - ikonka: adaptive (gradient fon + oq barg) va Android 13+ monoxrom; generator — `scripts/gen-android-assets.mjs`;
   - ilova ma'lumotlari (sessiya tokeni) Android zaxirasiga va qurilma ko'chirishga tushmaydi
     (`allowBackup="false"` + `data_extraction_rules.xml`).
 
@@ -391,32 +449,53 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | POST | `/api/auth/login` | – | `{phone, password}` → `{token, user}`. Noto'g'ri bo'lsa 401 |
 | POST | `/api/auth/logout` | ✓ | sessiyani o'chiradi |
 | GET | `/api/me` | ✓ | `{user, stats: {created, joined, completed}}` |
-| GET | `/api/stats` | – | `{hashars, completed, volunteers}` |
-| GET | `/api/hashars` | ixtiyoriy | `HasharDTO[]`. Query: `status`, `mine=created\|joined`, `q` |
+| POST | `/api/me/password` | ✓ | `{current_password, new_password}` → `{ok:true}`; joriy parol noto'g'ri — 401 `"Joriy parol noto'g'ri"` (limit kirish bilan umumiy); boshqa sessiyalar o'chadi |
+| POST | `/api/me/profile` | ✓ | multipart `name?, bio? (≤300), district? (≤60), avatar? (≤5 MB), remove_avatar?=1` → `{user}`; eski avatar R2 dan o'chadi |
+| GET | `/api/stats` | – | `{hashars, completed, volunteers, upcoming, districts}` |
+| GET | `/api/hashars` | ixtiyoriy | `HasharDTO[]`. Query: `status`, `mine=created\|joined`, `q`, `category` (vergul bilan bir nechta), `from`/`to` (YYYY-MM-DD), `near=lat,lng` + `radius_km` (standart 50, ≤ 1000; masofa bo'yicha tartib, `distance_km`) |
 | GET | `/api/hashars/:id` | ixtiyoriy | DTO + `volunteers[]`. `creator.phone` faqat qatnashuvchi yoki egasiga ko'rinadi |
-| POST | `/api/hashars` | ✓ | multipart: `title, description, address, lat, lng, date_time, items` (JSON) va ixtiyoriy `photo` → 201 |
-| POST / DELETE | `/api/hashars/:id/join` | ✓ | qo'shilish (idempotent) / chiqish (egasi chiqa olmaydi) |
+| POST | `/api/hashars` | ✓ | multipart: `title, description, address, lat, lng, date_time, items` (JSON), ixtiyoriy `category` (`cleaning`—standart, `greening`, `repair`, `other`), `max_volunteers` (2–1000, bo'sh — cheklanmagan) va `photo` → 201 |
+| POST / DELETE | `/api/hashars/:id/join` | ✓ | qo'shilish (idempotent; `max_volunteers` to'lgan bo'lsa 409 `"Joy qolmadi"`) / chiqish (egasi chiqa olmaydi) |
+| GET | `/api/hashars/:id/comments` | ixtiyoriy | `[{id, body, created_at, user:{id,name,avatar_url}, is_mine}]` (oxirgi 200 ta, eski → yangi) |
+| POST | `/api/hashars/:id/comments` | ✓ | `{body}` (1–500 belgi) → 201 izoh; 20 ta / soat |
+| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin |
+| GET | `/api/users/:id` | ixtiyoriy | ommaviy profil `{id, name, bio, district, avatar_url, created_at, stats, hashars}` — telefon YO'Q |
+| GET | `/api/leaderboard` | – | `?period=all\|month` → top 50 `[{user, joined, completed, created, score}]` |
+| GET | `/api/geo/search` | – | `?q=` (2–120 belgi) → `[{name, display, lat, lng}]` (≤ 6, faqat O'zbekiston) |
+| GET | `/api/geo/reverse` | – | `?lat=&lng=` → `{display, district, city}` |
 | POST | `/api/hashars/:id/complete` | ✓ egasi | multipart `photo` ("Keyin" rasmi) → COMPLETED |
 | DELETE | `/api/hashars/:id` | ✓ egasi | faqat PENDING holatda; R2 dagi rasmlar ham o'chiriladi |
-| GET | `/api/media/:folder/:file` | – | R2 dagi rasm (immutable kesh) |
+| GET | `/api/media/:folder/:file` | – | R2 dagi rasm: `before`, `after`, `avatars` (immutable kesh) |
 | GET | `/api/app`, `/api/app/download` | – | APK mavjudligi va versiyasi; faylni yuklab olish (statik `dist/app/`, zaxira — R2) |
 | GET | `/api/health` | – | `{ok:true}` |
 | GET | `/api/admin/overview` | ✓ admin | umumiy raqamlar + `recent_hashars`, `recent_users` (5 tadan) |
 | GET | `/api/admin/users` | ✓ admin | `?q=&offset=&limit=` (≤ 100) → `{items, total}` |
 | POST | `/api/admin/users/:id/block`, `/unblock`, `/role` | ✓ admin | bloklash (sessiyalar o'chadi) / blokdan chiqarish / `{role: 'user'\|'admin'}` |
-| DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, qatnashuvlari, hasharlari va ularning rasmlari |
+| DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, qatnashuvlari, izohlari, hasharlari, ularning rasmlari va avatari |
 | GET | `/api/admin/hashars` | ✓ admin | `?status=&q=&offset=&limit=` → `{items: HasharDTO + creator.phone, total}` |
-| DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari bilan) |
+| DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari va izohlari bilan) |
+| DELETE | `/api/admin/comments/:id` | ✓ admin | istalgan izohni o'chirish |
 
-`user` obyektida (`/api/me`, kirish, ro'yxat) `is_admin` maydoni bor. Admin marshrutlari: mehmon → 401, oddiy foydalanuvchi → 403.
+`user` obyektida (`/api/me`, kirish, ro'yxat, profil) `is_admin`, `bio`, `district`, `avatar_url` maydonlari bor.
+`HasharDTO` da (v3): `category`, `max_volunteers`, `comment_count`, `creator.avatar_url`; tafsilotdagi `volunteers[]` da `avatar_url`.
+
+**Geo proksi** (`worker/geo.js`): mijoz Nominatim'ga to'g'ridan-to'g'ri murojaat qilmaydi. Worker
+`format=jsonv2, countrycodes=uz, accept-language=uz,ru, limit=6` va `User-Agent: hasharchilar.uz/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)`
+bilan so'raydi; javob `geo_cache` jadvalida 30 kun saqlanadi (kalit: kichik harfli qidiruv so'zi yoki 4 xonagacha
+yaxlitlangan koordinata; javobda `x-geo-cache: hit|miss`). IP bo'yicha 30 so'rov / daqiqa (429). Upstream xatosi yoki
+8 soniyalik timeout → 502 `"Manzil xizmati vaqtincha ishlamayapti"` (xato keshlanmaydi). Admin marshrutlari: mehmon → 401, oddiy foydalanuvchi → 403.
 
 CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor://localhost`, `http://localhost`,
 `http://localhost:5173` va so'rov kelgan hostning o'zi.
 
 ## Ma'lum cheklovlar
 
-- **Telefon tasdiqlanmaydi.** SMS (OTP) yo'q, parolni tiklash funksiyasi ham yo'q.
-- **Xarita plitkalari** to'g'ridan-to'g'ri `tile.openstreetmap.org` dan keladi (kalitsiz, OSM foydalanish qoidalari bo'yicha kichik trafik uchun). Trafik katta bo'lsa, MapTiler yoki Stadia kabi kalitli xizmatga o'tish kerak (`src/lib/map.js` → `TILE_URL`).
+- **Telefon tasdiqlanmaydi.** SMS (OTP) yo'q, unutilgan parolni tiklash funksiyasi ham yo'q (kirgan foydalanuvchi
+  parolini `POST /api/me/password` bilan almashtira oladi).
+- **Xarita** OpenFreeMap vektor plitkalaridan keladi (kalitsiz, limitsiz). Uslub manzillari `src/lib/map.js`
+  (`STYLE_LIGHT`, `STYLE_DARK`) da; boshqa xizmatga o'tish uchun faqat shu ikki URL almashtiriladi. MapLibre WebGL2
+  talab qiladi (Android System WebView 2021+); WebGL bo'lmagan juda eski qurilmalarda xarita o'rniga bo'sh fon chiqadi,
+  ro'yxat va boshqa sahifalar ishlayveradi.
 - **Qidiruv** oddiy `LIKE` bilan ishlaydi. D1 da shablon uzunligi 50 bayt bilan cheklangani uchun
   juda uzun so'rov qisqartiriladi.
 - **Eski WebView:** Tailwind v4 taxminan Chrome 111+ ni talab qiladi. Eski Android WebView'larida dizayn buzilishi mumkin.

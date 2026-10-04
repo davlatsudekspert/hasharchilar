@@ -14,7 +14,7 @@ export { HasharDB };
  * avval dastlabki migratsiyalar, so'ng ma'lumot, keyin qolgan migratsiyalar TO'LA jadvallarga birma-bir.
  */
 export class UpgradeDB extends DurableObject {
-  upgrade({ migrations, before, seed }) {
+  upgrade({ migrations, before, seed, checks = [] }) {
     const storage = this.ctx.storage;
     const sql = storage.sql;
     applyMigrations(storage, migrations.slice(0, before));
@@ -43,7 +43,15 @@ export class UpgradeDB extends DurableObject {
         break;
       }
     }
-    return { rowsBefore, rowsAfter: count(), steps };
+    // Yangilanishdan keyingi tekshiruv so'rovlari (masalan, yangi ustunlarning DEFAULT qiymatlari)
+    const checked = checks.map((q) => {
+      try {
+        return { rows: sql.exec(q).toArray() };
+      } catch (err) {
+        return { error: String(err?.message ?? err) };
+      }
+    });
+    return { rowsBefore, rowsAfter: count(), steps, checks: checked };
   }
 }
 
@@ -76,11 +84,11 @@ async function runOp(db, target, op) {
 export default {
   async fetch(req, env) {
     if (req.method !== 'POST') return new Response('ok'); // tayyorlik tekshiruvi
-    const { target, name = 'test', ops, before, seed, extra = [] } = await req.json();
+    const { target, name = 'test', ops, before, seed, extra = [], checks = [] } = await req.json();
     if (target === 'upgrade') {
       // Haqiqiy MIGRATIONS (+ test bergan qo'shimcha migratsiyalar) — har bir `name` uchun yangi DO
       const stub = env.UPGRADE_DB.get(env.UPGRADE_DB.idFromName(name));
-      return Response.json(await stub.upgrade({ migrations: [...MIGRATIONS, ...extra], before, seed }));
+      return Response.json(await stub.upgrade({ migrations: [...MIGRATIONS, ...extra], before, seed, checks }));
     }
     const db = target === 'd1' ? env.D1 : new DoDatabase(env.HASHAR_DB.get(env.HASHAR_DB.idFromName(name)));
     const out = [];

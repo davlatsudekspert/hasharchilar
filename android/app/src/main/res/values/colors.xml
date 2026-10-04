@@ -4,6 +4,8 @@
     <color name="colorPrimary">#059669</color>
     <color name="colorPrimaryDark">#047857</color>
     <color name="colorAccent">#F59E0B</color>
-    <!-- Splash va oyna foni -->
+    <!-- Splash foni (Android 12+ tizim splash'i) -->
     <color name="splash_background">#059669</color>
+    <!-- WebView ostidagi oyna foni: sayt fon rangi (yorug' rejim). Tungi — values-night/colors.xml -->
+    <color name="app_background">#FFFFFF</color>
 </resources>

@@ -259,5 +259,72 @@ export function parseHasharFields(form, { now = Date.now() } = {}) {
     lng: parseCoord(form.get('lng'), 180),
     date_time: parseDateTime(str('date_time'), { notPast: true, now }),
     items: parseItems(form.get('items')),
+    // Eski mijozlar (v2 APK) bu maydonlarni yubormaydi: standart — 'cleaning' va cheklanmagan
+    category: parseCategory(str('category') || 'cleaning'),
+    max_volunteers: parseMaxVolunteers(str('max_volunteers')),
   };
+}
+
+// ---------- v3: kategoriya, joy cheklovi, profil, izoh, sana ----------
+
+export const CATEGORIES = ['cleaning', 'greening', 'repair', 'other'];
+
+/** Hashar turi (sxemadagi CHECK bilan bir xil ro'yxat). */
+export function parseCategory(raw) {
+  const s = String(raw ?? '').trim();
+  if (!CATEGORIES.includes(s)) throw new ValidationError("Hashar turi noto'g'ri");
+  return s;
+}
+
+export const MAX_VOLUNTEERS_MIN = 2;
+export const MAX_VOLUNTEERS_MAX = 1000;
+
+/** Ko'ngillilar chegarasi: bo'sh → null (cheklanmagan), aks holda butun son 2..1000. */
+export function parseMaxVolunteers(raw) {
+  const s = String(raw ?? '').trim();
+  if (s === '') return null;
+  const n = /^\d{1,5}$/.test(s) ? Number(s) : NaN;
+  if (!(n >= MAX_VOLUNTEERS_MIN && n <= MAX_VOLUNTEERS_MAX)) {
+    throw new ValidationError(`Ko'ngillilar soni ${MAX_VOLUNTEERS_MIN}–${MAX_VOLUNTEERS_MAX} oralig'ida bo'lsin (yoki bo'sh qoldiring)`);
+  }
+  return n;
+}
+
+/** 'YYYY-MM-DD' (mavjud sana) yoki ValidationError. */
+export function parseDate(raw, label = 'Sana') {
+  const s = String(raw ?? '').trim();
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const bad = () => new ValidationError(`${label} formati noto'g'ri (YYYY-MM-DD)`);
+  if (!m) throw bad();
+  const [y, mo, d] = m.slice(1).map(Number);
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (y < 2000 || y > 2100 || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) throw bad();
+  return s;
+}
+
+export const BIO_MAX = 300;
+export const DISTRICT_MAX = 60;
+export const COMMENT_MAX = 500;
+
+/** "O'zim haqimda": ko'p qatorli, ≤ 300 belgi (bo'sh mumkin). */
+export function parseBio(raw) {
+  const bio = cleanText(raw);
+  if (charLength(bio) > BIO_MAX) throw new ValidationError(`"O'zim haqimda" ${BIO_MAX} belgidan oshmasin`);
+  return bio;
+}
+
+/** Tuman: bir qatorli, ≤ 60 belgi (bo'sh mumkin). */
+export function parseDistrict(raw) {
+  const d = cleanLine(raw);
+  if (charLength(d) > DISTRICT_MAX) throw new ValidationError(`Tuman nomi ${DISTRICT_MAX} belgidan oshmasin`);
+  return d;
+}
+
+/** Izoh matni: 1..500 belgi (code point), qator ko'chirishlar saqlanadi. */
+export function parseCommentBody(raw) {
+  const body = cleanText(typeof raw === 'string' ? raw : '');
+  const n = charLength(body);
+  if (n < 1) throw new ValidationError('Izoh matnini yozing');
+  if (n > COMMENT_MAX) throw new ValidationError(`Izoh ${COMMENT_MAX} belgidan oshmasin`);
+  return body;
 }

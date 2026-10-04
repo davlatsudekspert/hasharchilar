@@ -1,117 +1,217 @@
-// Hashar kartasi: status, nom, manzil, sana, kerakli narsalar, ko'ngillilar, "Qatnashish".
+// Hashar kartalari: katta (rasmli) va ixcham (gorizontal) ko'rinish, "Qatnashish" tugmasi, eskiz.
 import { forwardRef } from 'react';
+import { useActions } from '../lib/actions.jsx';
 import { mediaUrl } from '../lib/config.js';
-import { cx, formatDateTime, formatKm, volunteersLabel } from '../lib/utils.js';
-import { CalendarIcon, CheckIcon, LeafIcon, NavigationIcon, PinIcon, UsersIcon } from './icons.jsx';
-import { ItemChips, StatusBadge, Spinner } from './ui.jsx';
+import { categoryOf } from '../lib/meta.js';
+import { navigate } from '../lib/router.js';
+import { countdown, cx, dateBadge, formatDateTime, formatKm } from '../lib/utils.js';
+import { CATEGORY_ICONS, CheckIcon, ClockIcon, MessageIcon, PinIcon, UsersIcon } from './icons.jsx';
+import { btn, CategoryChip, Progress, Spinner, StatusBadge } from './ui.jsx';
 
-/** Kichik rasm (oldin/keyin) yoki barg bilan joy egallovchi. */
-export function Thumb({ hashar: h, className }) {
-  const src = mediaUrl(h.status === 'COMPLETED' ? h.after_url || h.before_url : h.before_url);
+/** Rasm bo'lmasa — kategoriya rangidagi chiroyli fon. */
+export function Thumb({ hashar, className, iconClass = 'h-10 w-10', prefer = 'after' }) {
+  const url = mediaUrl(prefer === 'after' ? hashar.after_url || hashar.before_url : hashar.before_url || hashar.after_url);
+  const c = categoryOf(hashar.category);
+  const Icon = CATEGORY_ICONS[c.id];
+  if (url) return <img src={url} alt="" loading="lazy" className={cx('object-cover', className)} />;
   return (
-    <div className={cx('relative shrink-0 overflow-hidden rounded-xl bg-emerald-50', className)}>
-      {src ? (
-        <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
-      ) : (
-        <div className="grid h-full w-full place-items-center text-emerald-300">
-          <LeafIcon className="h-8 w-8" />
-        </div>
-      )}
+    <div className={cx('relative grid place-items-center overflow-hidden bg-gradient-to-br text-white', c.tint, className)} aria-hidden="true">
+      <div className="absolute -right-6 -top-6 h-24 w-24 rounded-full bg-white/15" />
+      <div className="absolute -bottom-8 -left-4 h-28 w-28 rounded-full bg-black/10" />
+      <Icon className={cx('relative opacity-90', iconClass)} strokeWidth={1.6} />
     </div>
   );
 }
 
-/** Qatnashish tugmasi uchun umumiy holat. */
-export function JoinButton({ hashar: h, busy, onJoin, className, size = 'md' }) {
-  const pad = size === 'lg' ? 'h-12 px-6 text-base' : 'h-10 px-4 text-sm';
+/** Qatnashish tugmasi (holatga qarab). */
+export function JoinButton({ hashar: h, size = 'md', className, onJoined }) {
+  const { join, busyId } = useActions();
+  const busy = busyId === h.id;
+  const sz = size === 'lg' ? 'h-12 px-5 text-base' : size === 'sm' ? 'h-9 px-3.5 text-sm' : 'h-10 px-4 text-sm';
+  const full = h.max_volunteers && h.volunteer_count >= h.max_volunteers;
+
   if (h.status === 'COMPLETED') {
     return (
-      <span className={cx('inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-50 font-bold text-emerald-800', pad, className)}>
-        <CheckIcon className="h-4 w-4" strokeWidth={2.6} /> Yakunlangan
+      <span className={cx('inline-flex items-center justify-center gap-1.5 rounded-2xl bg-brand-soft font-bold text-brand', sz, className)}>
+        <CheckIcon className="h-4 w-4" strokeWidth={3} /> Yakunlangan
       </span>
     );
   }
+  if (h.is_owner) {
+    return <span className={cx('inline-flex items-center justify-center rounded-2xl bg-surface-2 font-bold text-ink-2 ring-1 ring-line', sz, className)}>Sizning hasharingiz</span>;
+  }
   if (h.joined) {
     return (
-      <span className={cx('inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 font-bold text-white', pad, className)}>
-        <CheckIcon className="h-4 w-4" strokeWidth={2.6} /> Qatnashasiz
+      <span className={cx('inline-flex items-center justify-center gap-1.5 rounded-2xl bg-emerald-600 font-bold text-white dark:bg-emerald-500 dark:text-emerald-950', sz, className)}>
+        <CheckIcon className="h-4 w-4" strokeWidth={3} /> Qatnashasiz
       </span>
     );
+  }
+  if (full) {
+    return <span className={cx('inline-flex items-center justify-center rounded-2xl bg-surface-2 font-bold text-ink-3 ring-1 ring-line', sz, className)}>Joy qolmadi</span>;
   }
   return (
     <button
       type="button"
       disabled={busy}
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation();
-        onJoin(h.id);
+        const r = await join(h.id);
+        if (r) onJoined?.(r);
       }}
-      className={cx(
-        'relative z-10 inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 font-bold text-slate-900 shadow-sm shadow-amber-500/25 transition hover:bg-amber-300 active:scale-[.98] disabled:opacity-60',
-        pad,
-        className,
-      )}
+      className={cx(btn.cta, sz, className)}
+      aria-label={`Qatnashish: ${h.title}`}
     >
-      {busy && <Spinner />} Qatnashish
+      {busy ? <Spinner /> : <UsersIcon className="h-4 w-4" strokeWidth={2.4} />} Qatnashish
     </button>
   );
 }
 
-const HasharCard = forwardRef(function HasharCard({ hashar: h, selected, distance, busy, onOpen, onJoin, onHover }, ref) {
+const open = (h) => navigate(`/hashar/${h.id}`);
+
+/** Katta karta (setka uchun). */
+const HasharCard = forwardRef(function HasharCard({ hashar: h, distance, selected, className, onHover }, ref) {
+  const done = h.status === 'COMPLETED';
+  const d = dateBadge(h.date_time);
+  const left = !done ? countdown(h.date_time) : null;
+  const dist = distance ?? h.distance_km;
   return (
     <article
       ref={ref}
       onMouseEnter={onHover ? () => onHover(h.id) : undefined}
       className={cx(
-        'group relative rounded-2xl bg-white p-4 shadow-sm ring-1 transition hover:shadow-md',
-        selected ? 'ring-2 ring-emerald-500' : 'ring-slate-200/80 hover:ring-slate-300',
+        'group relative flex flex-col overflow-hidden rounded-3xl border bg-surface shadow-soft transition duration-300 hover:-translate-y-0.5 hover:shadow-lift',
+        selected ? 'border-emerald-500 ring-4 ring-emerald-500/15' : 'border-line',
+        className,
       )}
     >
-      <div className="flex gap-3.5">
-        <Thumb hashar={h} className="h-[84px] w-[84px] sm:h-24 sm:w-24" />
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5">
-            <StatusBadge status={h.status} />
-            {distance != null && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-1 text-xs font-bold text-sky-800">
-                <NavigationIcon className="h-3 w-3" /> {formatKm(distance)}
+      <div className="relative aspect-[16/10] overflow-hidden">
+        <Thumb hashar={h} className="h-full w-full transition duration-500 group-hover:scale-[1.04]" iconClass="h-14 w-14" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+        <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+          <CategoryChip category={h.category} short className="bg-white/95 text-slate-800 shadow-sm dark:bg-slate-950/80 dark:text-white" />
+        </div>
+        <div className="absolute right-3 top-3">
+          <StatusBadge status={h.status} className="bg-white/95 shadow-sm dark:bg-slate-950/80" />
+        </div>
+        <div className="absolute bottom-3 left-3 flex items-end gap-2">
+          <div className="overflow-hidden rounded-2xl bg-white text-center shadow-lg ring-1 ring-black/5 dark:bg-slate-900">
+            <div className="bg-emerald-600 px-2.5 py-0.5 text-[10px] font-extrabold tracking-wider text-white">{d.month}</div>
+            <div className="px-2.5 pb-1 pt-0.5 font-display text-xl font-extrabold leading-none text-slate-900 dark:text-white">{d.day}</div>
+          </div>
+          {left && (
+            <span className="mb-0.5 inline-flex items-center gap-1 rounded-full bg-black/45 px-2.5 py-1 text-xs font-bold text-white backdrop-blur">
+              <ClockIcon className="h-3.5 w-3.5" /> {left}
+            </span>
+          )}
+        </div>
+        {h.joined && !done && (
+          <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white shadow">
+            <CheckIcon className="h-3 w-3" strokeWidth={3.5} /> Siz qatnashasiz
+          </span>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col p-4">
+        <h3 className="line-clamp-2 text-[17px] font-extrabold leading-snug text-ink">
+          <a
+            href={`#/hashar/${h.id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              open(h);
+            }}
+            className="outline-none after:absolute after:inset-0 after:content-[''] focus-visible:underline"
+          >
+            {h.title}
+          </a>
+        </h3>
+        <p className="mt-1.5 flex items-center gap-1.5 truncate text-sm text-ink-3">
+          <PinIcon className="h-4 w-4 shrink-0" />
+          <span className="truncate">{h.address || 'Xaritada belgilangan joy'}</span>
+          {dist != null && <span className="shrink-0 font-semibold text-sky-700 dark:text-sky-300">· {formatKm(dist)}</span>}
+        </p>
+        <p className="mt-1 flex items-center gap-1.5 text-sm text-ink-3">
+          <ClockIcon className="h-4 w-4 shrink-0" /> {formatDateTime(h.date_time)}
+        </p>
+
+        {h.max_volunteers ? (
+          <div className="mt-3">
+            <div className="mb-1 flex justify-between text-xs font-semibold text-ink-3">
+              <span>
+                {h.volunteer_count}/{h.max_volunteers} ko'ngilli
+              </span>
+              <span>{Math.max(0, h.max_volunteers - h.volunteer_count)} joy qoldi</span>
+            </div>
+            <Progress value={h.volunteer_count} max={h.max_volunteers} />
+          </div>
+        ) : null}
+
+        <div className="relative z-[1] mt-auto flex items-center justify-between gap-3 pt-4">
+          <div className="flex items-center gap-3 text-sm font-semibold text-ink-2">
+            <span className="inline-flex items-center gap-1.5">
+              <UsersIcon className="h-4 w-4 text-brand" /> {h.volunteer_count || 0}
+            </span>
+            {h.comment_count > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <MessageIcon className="h-4 w-4 text-ink-3" /> {h.comment_count}
               </span>
             )}
           </div>
-          <h3 className="mt-1.5 line-clamp-2 text-[16px] font-bold leading-snug text-slate-900">
-            {/* Butun kartani bosiladigan qiluvchi tugma (accessible "stretched link") */}
-            <button
-              type="button"
-              onClick={() => onOpen(h.id)}
-              className="text-left outline-none after:absolute after:inset-0 after:rounded-2xl after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-emerald-500"
-            >
-              {h.title}
-            </button>
-          </h3>
-          <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600">
-            <CalendarIcon className="h-4 w-4 shrink-0 text-slate-400" />
-            <span className="truncate font-medium">{formatDateTime(h.date_time)}</span>
-          </p>
-          {h.address && (
-            <p className="mt-0.5 flex items-center gap-1.5 text-sm text-slate-600">
-              <PinIcon className="h-4 w-4 shrink-0 text-slate-400" />
-              <span className="truncate">{h.address}</span>
-            </p>
-          )}
+          <JoinButton hashar={h} size="sm" />
         </div>
-      </div>
-
-      {h.items?.length > 0 && <ItemChips items={h.items} max={3} className="mt-3" />}
-
-      <div className="mt-3.5 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
-        <span className="flex items-center gap-1.5 text-sm font-semibold text-slate-600">
-          <UsersIcon className="h-4 w-4 text-emerald-600" />
-          {volunteersLabel(h.volunteer_count)}
-        </span>
-        <JoinButton hashar={h} busy={busy} onJoin={onJoin} />
       </div>
     </article>
   );
 });
 
 export default HasharCard;
+
+/** Ixcham gorizontal karta (ro'yxatlar, xarita paneli, profil). */
+export function HasharRow({ hashar: h, distance, selected, onClick, action = true, className }) {
+  const dist = distance ?? h.distance_km;
+  return (
+    <article
+      className={cx(
+        'group relative flex gap-3.5 rounded-3xl border bg-surface p-3 shadow-soft transition hover:shadow-lift',
+        selected ? 'border-emerald-500 ring-4 ring-emerald-500/15' : 'border-line',
+        className,
+      )}
+    >
+      <Thumb hashar={h} className="h-24 w-24 shrink-0 rounded-2xl" iconClass="h-9 w-9" />
+      <div className="flex min-w-0 flex-1 flex-col py-0.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <StatusBadge status={h.status} className="px-2 py-0.5 text-[11px]" />
+          <CategoryChip category={h.category} short className="px-2 py-0.5 text-[11px]" />
+        </div>
+        <h3 className="mt-1.5 line-clamp-2 text-[15px] font-extrabold leading-snug text-ink">
+          <a
+            href={`#/hashar/${h.id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              if (onClick) onClick(h);
+              else open(h);
+            }}
+            className="outline-none after:absolute after:inset-0 after:content-[''] focus-visible:underline"
+          >
+            {h.title}
+          </a>
+        </h3>
+        <p className="mt-1 truncate text-xs font-medium text-ink-3">
+          {formatDateTime(h.date_time)}
+          {dist != null && <span className="text-sky-700 dark:text-sky-300"> · {formatKm(dist)}</span>}
+        </p>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-2">
+          <span className="inline-flex items-center gap-1 text-xs font-bold text-ink-2">
+            <UsersIcon className="h-3.5 w-3.5 text-brand" /> {h.volunteer_count || 0}
+            {h.max_volunteers ? `/${h.max_volunteers}` : ''}
+          </span>
+          {action && (
+            <div className="relative z-[1]">
+              <JoinButton hashar={h} size="sm" className="h-8 px-3 text-xs" />
+            </div>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+}

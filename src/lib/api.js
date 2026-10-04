@@ -1,6 +1,7 @@
 // Backend (Hono Worker) bilan aloqa. Barcha so'rovlar API_BASE + /api/... ga ketadi.
 // Token `localStorage['hashar_token']` da, har so'rovda `Authorization: Bearer` sarlavhasi.
 import { API_BASE } from './config.js';
+import { mirrorToken } from './native.js';
 import { storage, TOKEN_KEY } from './storage.js';
 
 /** HTTP status bilan xato (UI faqat `message` ni ko'rsatadi). */
@@ -14,8 +15,14 @@ export class ApiError extends Error {
 
 // ---------- Token ----------
 export const getToken = () => storage.get(TOKEN_KEY);
-export const setToken = (token) => storage.set(TOKEN_KEY, token);
-export const clearToken = () => storage.remove(TOKEN_KEY);
+export const setToken = (token) => {
+  storage.set(TOKEN_KEY, token);
+  mirrorToken(token);
+};
+export const clearToken = () => {
+  storage.remove(TOKEN_KEY);
+  mirrorToken(null);
+};
 
 // 401 bo'lganda auth holatini xabardor qilish uchun obunachilar
 const unauthorizedListeners = new Set();
@@ -38,9 +45,10 @@ function fallbackMessage(status) {
 /**
  * Umumiy so'rov funksiyasi.
  * @param {string} path  "/hashars" kabi (oldiga /api qo'shiladi)
- * @param {{method?: string, json?: any, form?: FormData, signal?: AbortSignal}} opts
+ * @param {{method?: string, json?: any, form?: FormData, signal?: AbortSignal, keepSession?: boolean}} opts
+ *   keepSession — 401 sessiyani tugatmaydi (masalan, parol o'zgartirishda joriy parol noto'g'ri)
  */
-export async function request(path, { method = 'GET', json, form, signal } = {}) {
+export async function request(path, { method = 'GET', json, form, signal, keepSession = false } = {}) {
   const headers = { Accept: 'application/json' };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -69,7 +77,7 @@ export async function request(path, { method = 'GET', json, form, signal } = {})
   }
 
   // Sessiya eskirgan — tokenni tozalab, auth holatini xabardor qilamiz
-  if (res.status === 401 && token) {
+  if (res.status === 401 && token && !keepSession) {
     clearToken();
     unauthorizedListeners.forEach((fn) => {
       try {
@@ -113,6 +121,22 @@ export const api = {
   complete: (id, form) => request(`/hashars/${id}/complete`, { method: 'POST', form }),
   remove: (id) => request(`/hashars/${id}`, { method: 'DELETE' }),
 
+  // Izohlar
+  comments: (id) => request(`/hashars/${id}/comments`),
+  addComment: (id, body) => request(`/hashars/${id}/comments`, { method: 'POST', json: { body } }),
+  deleteComment: (id) => request(`/comments/${id}`, { method: 'DELETE' }),
+
+  // Profil, reyting
+  user: (id) => request(`/users/${id}`),
+  updateProfile: (form) => request('/me/profile', { method: 'POST', form }),
+  changePassword: (current_password, new_password) =>
+    request('/me/password', { method: 'POST', json: { current_password, new_password }, keepSession: true }),
+  leaderboard: (period = 'all') => request(`/leaderboard${qs({ period })}`),
+
+  // Geo (worker proksi orqali Nominatim)
+  geoSearch: (q, signal) => request(`/geo/search${qs({ q })}`, { signal }),
+  geoReverse: (lat, lng, signal) => request(`/geo/reverse${qs({ lat: lat.toFixed(5), lng: lng.toFixed(5) })}`, { signal }),
+
   // Admin panel (/api/admin/*)
   admin: {
     overview: () => request('/admin/overview'),
@@ -123,5 +147,6 @@ export const api = {
     deleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),
     hashars: (params) => request(`/admin/hashars${qs(params)}`),
     deleteHashar: (id) => request(`/admin/hashars/${id}`, { method: 'DELETE' }),
+    deleteComment: (id) => request(`/admin/comments/${id}`, { method: 'DELETE' }),
   },
 };

@@ -6,7 +6,7 @@
     "androidScheme": "https"
   },
   "android": {
-    "backgroundColor": "#f8fafc",
+    "backgroundColor": "#ffffff",
     "appendUserAgent": "Hasharchilar/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)",
     "allowMixedContent": false,
     "captureInput": false,
@@ -14,9 +14,9 @@
   },
   "plugins": {
     "SplashScreen": {
-      "launchShowDuration": 4000,
+      "launchShowDuration": 3000,
       "launchAutoHide": true,
-      "launchFadeOutDuration": 250,
+      "launchFadeOutDuration": 300,
       "backgroundColor": "#059669",
       "androidSplashResourceName": "splash",
       "androidScaleType": "CENTER_CROP",
@@ -25,13 +25,12 @@
       "splashImmersive": false
     },
     "StatusBar": {
-      "style": "DARK",
-      "backgroundColor": "#059669"
+      "style": "DEFAULT"
     },
     "SystemBars": {
       "insetsHandling": "css",
       "initialViewportFitValueHint": "cover",
-      "style": "DARK"
+      "style": "DEFAULT"
     }
   }
 }

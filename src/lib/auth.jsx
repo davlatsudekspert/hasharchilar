@@ -81,8 +81,8 @@ export function AuthProvider({ children }) {
   }, [signOutLocal]);
 
   const value = useMemo(
-    () => ({ user, stats, ready, login, register, logout, refresh }),
-    [user, stats, ready, login, register, logout, refresh],
+    () => ({ user, stats, ready, login, register, logout, refresh, setUser: saveUser }),
+    [user, stats, ready, login, register, logout, refresh, saveUser],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

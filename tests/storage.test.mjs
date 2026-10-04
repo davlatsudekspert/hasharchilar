@@ -410,6 +410,10 @@ const EXTRA_ROWS = `
 INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('test-token-hash', 1, datetime('now', '+90 days'));
 INSERT INTO rate_limits (key, window_start, count) VALUES ('auth:127.0.0.1', 1000, 3);
 `;
+// 0003_v3 dan keyin paydo bo'lgan jadvallar (joriy seed.sql da geo_cache yo'q)
+const EXTRA_ROWS_V3 = `
+INSERT INTO geo_cache (key, value, created_at) VALUES ('s:chilonzor', '[]', 1000);
+`;
 
 async function upgrade(server, body) {
   const res = await fetch(server.url, { method: 'POST', body: JSON.stringify({ target: 'upgrade', ...body }) });
@@ -420,7 +424,9 @@ async function upgrade(server, body) {
 describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo'llanadi", () => {
   let dir;
   let server;
-  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS;
+  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3;
+  // Eski (0003 dan oldingi) sxemaga yozilgan namuna: yangi migratsiyalar shu ma'lumot ustida sinaladi
+  const seedV2 = readFileSync(join(ROOT, 'tests/fixtures/seed-v2.sql'), 'utf8') + EXTRA_ROWS;
   const files = MIGRATION_FILES;
 
   before(async () => {
@@ -434,24 +440,65 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
   });
 
   test("0001 dan keyin namuna ma'lumot → qolgan migratsiyalar birma-bir", async () => {
-    // seed.sql eng yangi sxemaga yozilgan bo'lishi mumkin: u qo'llanadigan eng erta bosqichdan boshlanadi
-    let checked = 0;
-    for (let k = 1; k <= files.length; k++) {
-      const r = await upgrade(server, { name: `real-${k}`, before: k, seed });
-      if (r.seedError) continue;
-      for (const [table, n] of Object.entries(r.rowsBefore)) assert.ok(n > 0, `${table} bo'sh (k=${k})`);
-      assert.deepEqual(r.steps.map((s) => s.name), files.slice(k), `k=${k}: qolgan migratsiyalar`);
-      for (const s of r.steps) assert.ok(s.ok, `${s.name} ma'lumotli bazada yiqildi: ${s.error}`);
-      for (const [table, n] of Object.entries(r.rowsBefore)) {
-        assert.ok(r.rowsAfter[table] >= n, `${table}: qatorlar yo'qoldi (${n} → ${r.rowsAfter[table]})`);
+    // Har bir namuna u qo'llanadigan har bir bosqichdan boshlab sinaladi
+    const migratedWithData = new Set();
+    // seed-v2.sql — faqat 0003 dan oldingi bosqichlarda (keyin yangi jadvallar bo'sh qoladi)
+    const v2Max = files.indexOf('0003_v3.sql');
+    for (const [label, sql, maxK] of [['seed.sql', seed, files.length], ['seed-v2.sql', seedV2, v2Max]]) {
+      let checked = 0;
+      for (let k = 1; k <= maxK; k++) {
+        const r = await upgrade(server, { name: `real-${label}-${k}`, before: k, seed: sql });
+        if (r.seedError) continue;
+        for (const [table, n] of Object.entries(r.rowsBefore)) assert.ok(n > 0, `${label}: ${table} bo'sh (k=${k})`);
+        assert.deepEqual(r.steps.map((s) => s.name), files.slice(k), `${label} k=${k}: qolgan migratsiyalar`);
+        for (const s of r.steps) {
+          assert.ok(s.ok, `${s.name} ma'lumotli bazada yiqildi: ${s.error}`);
+          migratedWithData.add(s.name);
+        }
+        for (const [table, n] of Object.entries(r.rowsBefore)) {
+          assert.ok(r.rowsAfter[table] >= n, `${table}: qatorlar yo'qoldi (${n} → ${r.rowsAfter[table]})`);
+        }
+        checked++;
       }
-      checked++;
+      assert.ok(checked > 0, `${label} hech bir bosqichda qo'llanmadi`);
     }
-    assert.ok(checked > 0, "seed.sql hech bir bosqichda qo'llanmadi");
+    // 0001 dan keyingi har bir migratsiya kamida bir marta to'la bazada qo'llangan bo'lishi shart
+    for (const f of files.slice(1)) assert.ok(migratedWithData.has(f), `${f} ma'lumotli bazada sinalmadi`);
+  });
+
+  test("0003_v3: mavjud qatorlar DEFAULT qiymatlarni oladi, yangi jadvallar ishlaydi", async () => {
+    const at = files.indexOf('0003_v3.sql');
+    assert.ok(at > 0);
+    const r = await upgrade(server, {
+      name: 'v3-defaults',
+      before: at,
+      seed: seedV2,
+      checks: [
+        'SELECT DISTINCT category, max_volunteers FROM hashars',
+        "SELECT COUNT(*) AS n FROM users WHERE bio = '' AND district = '' AND avatar_key IS NULL",
+        'SELECT COUNT(*) AS n FROM users',
+        "INSERT INTO comments (hashar_id, user_id, body) VALUES (1, 2, 'Salom') RETURNING id",
+        "INSERT INTO geo_cache (key, value, created_at) VALUES ('r:41.3,69.2', '{}', 1) RETURNING key",
+        "UPDATE hashars SET category = 'yomon' WHERE id = 1",
+        "INSERT INTO comments (hashar_id, user_id, body) VALUES (1, 2, '') RETURNING id",
+        'DELETE FROM hashars WHERE id = 1',
+        'SELECT COUNT(*) AS n FROM comments WHERE hashar_id = 1',
+      ],
+    });
+    assert.ok(!r.seedError, r.seedError);
+    assert.deepEqual(r.steps, [{ name: '0003_v3.sql', ok: true }]);
+    const [cats, defaults, users, ins, geo, badCat, emptyBody, , cascade] = r.checks;
+    assert.deepEqual(cats.rows, [{ category: 'cleaning', max_volunteers: null }]);
+    assert.equal(defaults.rows[0].n, users.rows[0].n);
+    assert.equal(ins.rows.length, 1);
+    assert.deepEqual(geo.rows, [{ key: 'r:41.3,69.2' }]);
+    assert.match(badCat.error, /CHECK constraint failed/);
+    assert.match(emptyBody.error, /CHECK constraint failed/);
+    assert.equal(cascade.rows[0].n, 0, "hashar o'chganda izohlari ham o'chdi");
   });
 
   test("tekshiruvning o'zi: to'la bazada yiqiladigan migratsiya ushlanadi, ma'lumot buzilmaydi", async () => {
-    const bad = { name: '9999_bad.sql', sql: 'ALTER TABLE hashars ADD COLUMN category TEXT NOT NULL;' };
+    const bad = { name: '9999_bad.sql', sql: 'ALTER TABLE hashars ADD COLUMN bad_col TEXT NOT NULL;' };
     // Bo'sh bazada o'tadi (CI dagi toza wrangler dev buni ko'rmasdi) ...
     const empty = await upgrade(server, { name: 'bad-empty', before: files.length, seed: '', extra: [bad] });
     assert.deepEqual(empty.steps, [{ name: bad.name, ok: true }]);

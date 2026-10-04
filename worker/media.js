@@ -5,7 +5,7 @@ import { NotFoundError, ValidationError } from './validate.js';
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5 MB
 const PHOTO_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 const EXT_TYPES = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' };
-const MEDIA_FOLDERS = new Set(['before', 'after']);
+const MEDIA_FOLDERS = new Set(['before', 'after', 'avatars']);
 const MEDIA_FILE_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/;
 
 const APK_KEY = 'app/hasharchilar.apk';
@@ -67,6 +67,9 @@ export async function deletePhotos(bucket, keys) {
 
 /** R2 kalitidan mijoz uchun nisbiy URL. */
 export const mediaUrl = (key) => `/api/media/${key}`;
+
+/** Avatar kaliti (avatars/<uuid>.<ext>) → URL yoki null. */
+export const avatarUrl = (key) => (key ? mediaUrl(key) : null);
 
 // ---------- Marshrutlar ----------
 

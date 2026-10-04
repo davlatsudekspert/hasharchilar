@@ -36,7 +36,7 @@ hasharchilar/
 └── README.md
 ```
 
-Versiyalar: React 18, Vite 6, Tailwind CSS v4 (`@tailwindcss/vite`), Leaflet 1.9, Hono 4, wrangler 4,
+Versiyalar: React 18, Vite 6, Tailwind CSS v4 (`@tailwindcss/vite`), MapLibre GL 5 (v3 dan; Leaflet o'rniga), Hono 4, wrangler 4,
 Capacitor 8 (`@capacitor/core`, `@capacitor/cli`, `@capacitor/android`, `@capacitor/app`,
 `@capacitor/status-bar`, `@capacitor/splash-screen`). JDK 21 (Capacitor 8 talabi).
 
@@ -66,6 +66,18 @@ rate_limits(key TEXT PK, window_start INTEGER NOT NULL, count INTEGER NOT NULL)
 ```
 
 `migrations/0002_admin.sql`: `users.role TEXT NOT NULL DEFAULT 'user' CHECK IN ('user','admin')`, `users.blocked_at TEXT` (NULL — bloklanmagan).
+
+`migrations/0003_v3.sql` (DO rejimida production ma'lumotlari ustida qo'llanadi — barcha NOT NULL ustunlarda DEFAULT):
+```sql
+hashars.category TEXT NOT NULL DEFAULT 'cleaning' CHECK IN ('cleaning','greening','repair','other')
+hashars.max_volunteers INTEGER CHECK (NULL OR 2..1000)          -- NULL = cheklanmagan, tashkilotchi ham hisobda
+users.bio TEXT NOT NULL DEFAULT '' CHECK (length ≤ 300)
+users.district TEXT NOT NULL DEFAULT '' CHECK (length ≤ 60)
+users.avatar_key TEXT                                           -- R2: avatars/<uuid>.<ext>
+comments(id PK, hashar_id REFERENCES hashars ON DELETE CASCADE, user_id REFERENCES users ON DELETE CASCADE,
+         body TEXT NOT NULL CHECK (length 1..500), created_at)  + INDEX(hashar_id, id), INDEX(user_id)
+geo_cache(key TEXT PK, value TEXT NOT NULL /* JSON */, created_at INTEGER NOT NULL /* unix */) + INDEX(created_at)
+```
 
 ## 4. Autentifikatsiya
 
@@ -122,6 +134,38 @@ Bloklangan foydalanuvchi: kirish → 403 "Hisobingiz bloklangan", token qabul qi
 | GET | `/api/admin/hashars?status=&q=&offset=&limit=` | `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | istalgan holat; R2 rasmlari ham → `{ok:true}` |
 
+| DELETE | `/api/admin/comments/:id` | istalgan izoh → `{ok:true}`; yo'q → 404 |
+
+Admin `overview` da `comments` (izohlar soni) ham bor; `hashars` ro'yxatidagi DTO da `category`.
+
+### 5.1. v3 qo'shimchalari (docs/V3_PLAN.md 2-bo'lim)
+
+`HasharDTO` ga: `category`, `max_volunteers` (null — cheklanmagan), `comment_count`, `creator.avatar_url` (null yoki
+`/api/media/avatars/<uuid>.<ext>`); `near` filtri bilan — `distance_km` (2 xona). Tafsilotdagi `volunteers[]`:
+`{id, name, avatar_url}`. `user` obyekti (`/api/me`, kirish, ro'yxat, profil): `+ bio, district, avatar_url`.
+
+| Metod | Yo'l | Auth | Tavsif |
+|---|---|---|---|
+| GET | `/api/hashars` | ixt. | qo'shimcha query: `category=greening` yoki `greening,repair` (noto'g'ri → 400); `from`/`to` = `YYYY-MM-DD` (Toshkent sanasi, ikkala chegara ham kiradi; `from > to` → 400); `near=lat,lng` + `radius_km` (standart 50, 0.1–1000) — SQL'da to'rtburchak, JS'da haversine, radius ichidagilar eng yaqini birinchi, `distance_km` bilan |
+| POST | `/api/hashars` | ✓ | `+ category` (bo'sh → `cleaning`), `+ max_volunteers` (bo'sh → null, aks holda butun 2–1000) |
+| POST | `/api/hashars/:id/join` | ✓ | joy to'lgan → 409 `"Joy qolmadi"` (shart INSERT ichida, bitta tranzaksiya); allaqachon a'zo → 200 |
+| GET | `/api/hashars/:id/comments` | ixt. | `[{id, body, created_at, user:{id,name,avatar_url}, is_mine}]` oxirgi 200 ta, eski → yangi; hashar yo'q → 404 |
+| POST | `/api/hashars/:id/comments` | ✓ | JSON `{body}`: tozalanadi (trim, boshqaruv belgilari), 1–500 belgi (code point) → 201 CommentDTO; 20 ta / soat / foydalanuvchi (429) |
+| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin → `{ok:true}`; begona → 403; yo'q → 404 |
+| GET | `/api/users/:id` | ixt. | `{id, name, bio, district, avatar_url, created_at, stats:{created, joined, completed}, hashars: HasharDTO[] (yaratganlari, oxirgi 20)}` — telefon hech qayerda yo'q |
+| POST | `/api/me/profile` | ✓ | multipart `name?` (2–60), `bio?` (≤ 300, ko'p qatorli), `district?` (≤ 60), `avatar?` (JPG/PNG/WebP ≤ 5 MB), `remove_avatar?=1` → `{user}`; yuborilmagan maydon o'zgarmaydi, hech narsa yo'q → 400; avatar almashsa/o'chsa eski R2 obyekti o'chadi; 20 ta / soat |
+| POST | `/api/me/password` | ✓ | JSON `{current_password, new_password}` → `{ok:true}`; joriy parol noto'g'ri → 401 `"Joriy parol noto'g'ri"` (joriy sessiya saqlanadi); yangi parol `parsePassword` (≥ 6); limit kirish bilan umumiy (IP 30/15 daq, telefon 10/15 daq); muvaffaqiyatda joriy sessiyadan boshqa barcha sessiyalar o'chadi |
+| GET | `/api/leaderboard?period=all\|month` | – | top 50 `[{user:{id,name,avatar_url,district}, joined, completed, created, score}]`; `score = completed*10 + joined*3 + created*5`; `joined` — o'zi yaratmagan hasharlar; `month` — Toshkent oyining boshidan (`joined_at`, `completed_at`, `created_at`); bloklanganlar va 0 ballilar yo'q |
+| GET | `/api/geo/search?q=` | – | q 2–120 belgi → `[{name, display, lat, lng}]` ≤ 6 (Nominatim `countrycodes=uz`) |
+| GET | `/api/geo/reverse?lat=&lng=` | – | `{display, district, city}` (topilmasa bo'sh satrlar); koordinata 4 xonaga yaxlitlanib keshlanadi |
+| GET | `/api/media/avatars/:file` | – | avatar (media allowlist: `before`, `after`, `avatars`) |
+| GET | `/api/stats` | – | `{hashars, completed, volunteers, upcoming /* kelgusi PENDING */, districts /* users.district noyob, bo'sh emas */}` |
+
+Geo: `User-Agent: hasharchilar.uz/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)`, `format=jsonv2`,
+`accept-language=uz,ru`; `geo_cache` 30 kun (`x-geo-cache: hit|miss`); IP bo'yicha 30 / daqiqa; upstream xatosi
+yoki 8 s timeout → 502 `"Manzil xizmati vaqtincha ishlamayapti"` (keshlanmaydi). `env.GEO_MOCK === '1'` — testlar
+uchun deterministik soxta javob (`x-geo-source: mock`), production'da o'rnatilmaydi.
+
 Web: admin panel `#admin` hash manzilida (sayt va APK), `src/admin/` — `React.lazy` bilan alohida bundle;
 Profil oynasida `is_admin` bo'lsa "🛡️ Admin panel" tugmasi.
 
@@ -147,8 +191,9 @@ xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.
 - Tablar: "Xaritada ko'rish" | "Yaqindagi hasharlar" (geolokatsiya, masofa bo'yicha) | "Bajarilganlar (Oldin/Keyin)".
 - Xarita + kartalar (desktop: yonma-yon, chap ro'yxat scroll, o'ng xarita sticky 600px; mobil: xarita tepada 340px).
   Pinlar: PENDING amber, COMPLETED emerald; popup: nom, sana, ko'ngillilar soni, "Qatnashish".
-  Xarita plitkalari: OpenStreetMap `https://tile.openstreetmap.org/{z}/{x}/{y}.png` (kalitsiz; CARTO endi kalit so'raydi),
-  attribution "© OpenStreetMap hissadorlari"; APK User-Agent'iga "Hasharchilar/1.0" qo'shiladi (OSM qoidasi).
+  Xarita (v3): MapLibre GL + OpenFreeMap vektor uslublari (`styles/liberty`, tungi rejimda `styles/dark`), kalitsiz;
+  attribution "© OpenFreeMap © OpenMapTiles © OpenStreetMap" doim ko'rinadi; APK User-Agent'iga "Hasharchilar/1.0" qo'shiladi.
+  v3 da bu ekran ko'p sahifali tuzilmaga o'tdi — `docs/V3_PLAN.md` 3-bo'lim va README "Frontend (v3)".
 - Karta: status badge ("Kutilmoqda" amber / "Bajarildi" emerald), nom, manzil, sana, kerakli narsalar, ko'ngillilar soni,
   "Qatnashish" (amber) / "✓ Qatnashasiz" / "Yakunlangan". Bosilsa → Hashar tafsiloti oynasi.
 - Hashar tafsiloti (modal/sheet): oldin rasmi (yoki Oldin/Keyin slayder), tavsif, manzil, sana, narsalar,
@@ -165,11 +210,28 @@ xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.
 - Native'da: Android "orqaga" tugmasi ochiq modalni yopadi, modal bo'lmasa ilovadan chiqadi (`@capacitor/app`);
   status bar emerald; safe-area hisobga olinadi.
 
+### 6.1. v3 frontend (ko'p sahifali)
+
+- Hash router: `#/`, `#/xarita`, `#/hasharlar`, `#/hashar/:id`, `#/yaratish`, `#/natijalar`, `#/reyting`, `#/profil`,
+  `#/u/:id`, `#/haqida`, `#/kirish`, `#admin` / `#/admin`, qolgani — 404. Sahifalar `src/pages/`.
+- Desktop: yuqori menyu; mobil/APK: pastki tab bar (Bosh · Xarita · ＋ · Natijalar · Profil).
+- Tungi rejim: tizim + qo'lda (`localStorage['hashar_theme']` = `light|dark`, yo'q — tizim). Admin panel doim yorug'.
+- API mijozi: token `localStorage['hashar_token']`, `Authorization: Bearer`, `API_BASE + /api/...`, `mediaUrl()` —
+  o'zgarmagan. 401 → mehmon holati; istisno — `POST /api/me/password` (joriy parol noto'g'ri bo'lsa sessiya saqlanadi,
+  "Joriy parol noto'g'ri" maydon ostida ko'rsatiladi).
+- Avatar yuklashdan oldin ≤ 512px JPEG ga siqiladi; hashar rasmlari — ≤ 1600px.
+- Nishonlar mijozda `stats` dan hisoblanadi; ball = completed×10 + joined×3 + created×5 (reyting bilan bir xil).
+- Ulashish havolasi: `<sayt>/#/hashar/<id>`; kalendar: web — `.ics` fayl, APK — Google Calendar havolasi.
+
 ## 7. Android APK (Capacitor 8)
 
 - `appId: uz.hasharchilar.app`, `appName: Hasharchilar`, `webDir: dist`, `android.adjustMarginsForEdgeToEdge: "auto"` (agar versiyada bor bo'lsa).
 - Build: `VITE_API_BASE=https://<deploy qilingan domen> npm run build && npx cap sync android && cd android && ./gradlew assembleRelease`.
-- Manifest ruxsatlari: INTERNET, ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION, CAMERA (rasm olish uchun fayl tanlagich).
+- Manifest ruxsatlari: INTERNET, ACCESS_NETWORK_STATE (network), ACCESS_COARSE_LOCATION, ACCESS_FINE_LOCATION
+  (geolocation), CAMERA (camera), VIBRATE (haptics). Joylashuv va kamera ruxsati ish vaqtida so'raladi.
+- v3 plaginlari: `@capacitor/haptics`, `share`, `geolocation`, `camera`, `network`, `preferences` (+ app, splash-screen,
+  status-bar). Orqaga tugmasi: modal → sahifa tarixi → bosh sahifada ilovadan chiqish.
+- Mavzu: `AppTheme.NoActionBar` — DayNight (oyna foni `values`/`values-night`), WebView `prefers-color-scheme` tizimga ergashadi.
 - Ikonka: emerald fonda oq barg (adaptive icon + barcha mipmap PNG'lar), splash: emerald fon.
 - Imzo: `android/app/build.gradle` `signingConfigs.release` — `android/key.properties` mavjud bo'lsa undan
   (storeFile, storePassword, keyAlias, keyPassword), aks holda debug kaliti bilan imzolanadi (APK baribir o'rnatiladi).

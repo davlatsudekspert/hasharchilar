@@ -104,7 +104,7 @@ export default function OverviewTab({ meId, onShowUser, onShowAll }) {
               {data.recent_hashars.map((h) => (
                 <li key={h.id}>
                   <button type="button" onClick={() => setPreview(h)} className="flex w-full items-center gap-3 rounded-xl py-2.5 text-left hover:bg-slate-50">
-                    <Thumb hashar={h} className="h-12 w-12" />
+                    <Thumb hashar={h} className="h-12 w-12 shrink-0 rounded-xl" iconClass="h-6 w-6" />
                     <div className="min-w-0 flex-1">
                       <p className="line-clamp-1 font-bold text-slate-900">{h.title}</p>
                       <p className="truncate text-xs text-slate-500">
