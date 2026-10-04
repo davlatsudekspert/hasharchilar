@@ -5,6 +5,7 @@ import { HTTPException } from 'hono/http-exception';
 import { adminRoutes } from './admin.js';
 import { authRoutes, optionalAuth } from './auth.js';
 import { DoDatabase } from './d1-adapter.js';
+import { emailEnabled } from './email.js';
 import { HasharDB } from './do-db.js';
 import { geoRoutes } from './geo.js';
 import { getStats, hasharRoutes } from './hashars.js';
@@ -70,8 +71,10 @@ app.use('/api/*', optionalAuth);
 // ---------- Marshrutlar ----------
 
 app.get('/api/health', (c) => c.json({ ok: true }));
+// Mijoz sozlamalari: email bilan ro'yxat yoqilganmi (RESEND_API_KEY yoki EMAIL_MOCK)
+app.get('/api/config', (c) => c.json({ email_enabled: emailEnabled(c.env) }));
 app.get('/api/stats', getStats);
-app.route('/api', authRoutes); // /api/auth/*, /api/me
+app.route('/api', authRoutes); // /api/auth/*, /api/me, /api/me/email/*
 app.route('/api/hashars', hasharRoutes);
 app.route('/api', socialRoutes); // /api/hashars/:id/comments, /api/comments/:id, /api/users/:id, /api/leaderboard
 app.route('/api/geo', geoRoutes); // /api/geo/search, /api/geo/reverse (Nominatim proksi + kesh)
@@ -85,7 +88,7 @@ app.notFound((c) => c.json({ error: 'Topilmadi' }, 404));
 app.onError((err, c) => {
   if (err instanceof HttpError) {
     if (err.headers) for (const [k, v] of Object.entries(err.headers)) c.header(k, v);
-    return c.json({ error: err.message }, err.status);
+    return c.json(err.code ? { error: err.message, code: err.code } : { error: err.message }, err.status);
   }
   if (err instanceof HTTPException && err.status < 500) {
     return c.json({ error: "So'rov noto'g'ri" }, err.status);

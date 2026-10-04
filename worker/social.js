@@ -1,6 +1,6 @@
 // v3 ijtimoiy qism: izohlar, ommaviy profil, reyting (leaderboard).
 import { Hono } from 'hono';
-import { isAdmin, requireAuth } from './auth.js';
+import { isAdmin, requireAuth, requireVerifiedEmail } from './auth.js';
 import { HASHAR_SELECT, toDto } from './hashars.js';
 import { avatarUrl } from './media.js';
 import { limitComment } from './ratelimit.js';
@@ -49,7 +49,7 @@ socialRoutes.get('/hashars/:id/comments', async (c) => {
 });
 
 // POST /api/hashars/:id/comments — {body} → 201 CommentDTO
-socialRoutes.post('/hashars/:id/comments', requireAuth, async (c) => {
+socialRoutes.post('/hashars/:id/comments', requireVerifiedEmail, async (c) => {
   const id = parseId(c.req.param('id'));
   const uid = c.get('user').id;
   const db = c.env.DB;

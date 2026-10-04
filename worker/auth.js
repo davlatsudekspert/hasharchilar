@@ -1,16 +1,22 @@
-// Autentifikatsiya: parol xeshi (PBKDF2), sessiyalar, middleware va /api/auth/* marshrutlari.
+// Autentifikatsiya: parol xeshi (PBKDF2), sessiyalar, middleware va /api/auth/*, /api/me/* marshrutlari.
+// Email bilan ro'yxat / parolni tiklash / emailni tasdiqlash — bir martalik kodlar orqali (worker/otp.js).
 import { Hono } from 'hono';
-import { limitAuth, limitLoginPhone, limitProfile } from './ratelimit.js';
+import { emailEnabled, isEmailMock, requireEmailService } from './email.js';
+import { checkOtpSend, consumeOtp, createAndSendOtp, CODE_EXPIRED, otpResponse, otpTimings } from './otp.js';
+import { limitAuth, limitLoginEmail, limitLoginPhone, limitProfile } from './ratelimit.js';
 import { avatarUrl, deletePhotos, readPhoto, storePhoto } from './media.js';
 import {
   AuthError,
   ConflictError,
   ForbiddenError,
+  HttpError,
   ValidationError,
   PASSWORD_MAX,
   parseBio,
   parseDistrict,
+  parseEmail,
   parseName,
+  parseOtpCode,
   parsePassword,
   parsePhone,
   readForm,
@@ -26,6 +32,10 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bayt base64url
 
 const enc = new TextEncoder();
 export const BLOCKED_MESSAGE = 'Hisobingiz bloklangan';
+export const EMAIL_UNVERIFIED_MESSAGE = 'Avval emailingizni tasdiqlang';
+const EMAIL_REQUIRED_MESSAGE = "Ilovani yangilang: ro'yxatdan o'tish endi email orqali";
+const PHONE_TAKEN = "Bu telefon raqami allaqachon ro'yxatdan o'tgan";
+const EMAIL_TAKEN = "Bu email allaqachon boshqa hisobga bog'langan";
 
 // ---------- Kodlash yordamchilari ----------
 
@@ -103,7 +113,7 @@ async function getSessionUser(db, tokenHash) {
   const row = await db
     .prepare(
       `SELECT u.id, u.name, u.phone, u.role, u.blocked_at, u.created_at, u.bio, u.district, u.avatar_key,
-              (s.expires_at <= datetime('now')) AS expired
+              u.email, u.email_verified_at, (s.expires_at <= datetime('now')) AS expired
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?1`,
     )
@@ -147,11 +157,16 @@ export const isEnvAdmin = (phone, env) => adminPhones(env).has(phone);
 /** Administratormi: DB dagi rol yoki ADMIN_PHONES. */
 export const isAdmin = (user, env) => Boolean(user) && (user.role === 'admin' || isEnvAdmin(user.phone, env));
 
-/** Mijozga qaytariladigan foydalanuvchi obyekti. */
+/**
+ * Foydalanuvchining O'ZIGA qaytariladigan obyekt (/api/me, kirish, ro'yxat, profil).
+ * email faqat shu yerda (va admin ro'yxatida) — ommaviy javoblarda hech qachon.
+ */
 export const userDto = (u, env) => ({
   id: u.id,
   name: u.name,
   phone: u.phone,
+  email: u.email ?? null,
+  email_verified: Boolean(u.email_verified_at),
   created_at: toIso(u.created_at),
   is_admin: isAdmin(u, env),
   bio: u.bio ?? '',
@@ -160,7 +175,7 @@ export const userDto = (u, env) => ({
 });
 
 // Foydalanuvchi obyekti uchun ustunlar (userDto ga kerakli hammasi)
-const USER_COLS = 'id, name, phone, role, blocked_at, created_at, bio, district, avatar_key';
+const USER_COLS = 'id, name, phone, email, email_verified_at, role, blocked_at, created_at, bio, district, avatar_key';
 
 // ---------- Middleware ----------
 
@@ -192,12 +207,62 @@ export async function requireAuth(c, next) {
   await next();
 }
 
+/**
+ * Kontent yaratadigan / boshqalarga ta'sir qiladigan amallar (hashar yaratish, qo'shilish, chiqish, yakunlash,
+ * o'chirish, izoh): kirish + (email xizmati yoqilgan bo'lsa) tasdiqlangan email. Aks holda 403
+ * `{error, code: 'email_unverified'}`. Profil, email qo'shish va admin moderatsiyasi bunga kirmaydi.
+ */
+export async function requireVerifiedEmail(c, next) {
+  await requireAuth(c, async () => {
+    if (emailEnabled(c.env) && !c.get('user').email_verified_at) {
+      throw new HttpError(403, EMAIL_UNVERIFIED_MESSAGE, null, 'email_unverified');
+    }
+    await next();
+  });
+}
+
+/** UNIQUE buzilishi → 409 (qaysi maydon band ekaniga qarab); boshqa xato — o'zgarishsiz. */
+function conflictFrom(err) {
+  const msg = String(err?.message);
+  if (!/UNIQUE/i.test(msg)) return err;
+  return new ConflictError(/users\.email/.test(msg) ? EMAIL_TAKEN : PHONE_TAKEN);
+}
+
+/** Telefon / email bandligini tekshiradi (409). `exceptId` — o'zi (email almashtirishda). */
+async function assertFree(db, { phone = null, email = null, exceptId = 0 }) {
+  const row = await db
+    .prepare(
+      `SELECT (SELECT 1 FROM users WHERE phone = ?1 AND id <> ?3) AS phone,
+              (SELECT 1 FROM users WHERE email = ?2 AND id <> ?3) AS email`,
+    )
+    .bind(phone, email, exceptId)
+    .first();
+  if (row.phone) throw new ConflictError(PHONE_TAKEN);
+  if (row.email) throw new ConflictError(EMAIL_TAKEN);
+}
+
+/** Ro'yxat payload'i (register kodi bilan saqlangan JSON). */
+function readRegisterPayload(raw) {
+  try {
+    const p = JSON.parse(raw);
+    if (p && typeof p.name === 'string' && typeof p.phone === 'string' && typeof p.password_hash === 'string') return p;
+  } catch {
+    // buzilgan
+  }
+  return null;
+}
+
 // ---------- Marshrutlar: /api/auth/*, /api/me ----------
 
 export const authRoutes = new Hono();
 
-// POST /api/auth/register — {name, phone, password} → 201 {token, user}
+// POST /api/auth/register — {name, phone, password} → 201 {token, user} (eski APK'lar uchun).
+// Email xizmati yoqilgan bo'lsa — 410 {code: 'email_required'}: ro'yxat faqat register/start + register/verify orqali.
+// Xizmat o'chiq bo'lsa (RESEND_API_KEY yo'q va EMAIL_MOCK emas) — avvalgidek ishlaydi (sayt "qulflanib" qolmasin).
+// Test uchun (FAQAT EMAIL_MOCK=1): `x-test-legacy-register: 1` — emailsiz "eski" hisob yaratish.
 authRoutes.post('/auth/register', async (c) => {
+  const legacyTest = isEmailMock(c.env) && c.req.header('x-test-legacy-register') === '1';
+  if (emailEnabled(c.env) && !legacyTest) throw new HttpError(410, EMAIL_REQUIRED_MESSAGE, null, 'email_required');
   await limitAuth(c);
   const body = await readJson(c);
   const name = parseName(body.name);
@@ -206,7 +271,7 @@ authRoutes.post('/auth/register', async (c) => {
   const db = c.env.DB;
 
   const exists = await db.prepare('SELECT 1 FROM users WHERE phone = ?1').bind(phone).first();
-  if (exists) throw new ConflictError("Bu telefon raqami allaqachon ro'yxatdan o'tgan");
+  if (exists) throw new ConflictError(PHONE_TAKEN);
 
   const passwordHash = await hashPassword(password);
   const { token, tokenHash } = await newToken();
@@ -225,13 +290,66 @@ authRoutes.post('/auth/register', async (c) => {
     user = ins.results[0];
   } catch (err) {
     // Parallel ro'yxatdan o'tishda UNIQUE buzilishi
-    if (/UNIQUE/i.test(String(err?.message))) throw new ConflictError("Bu telefon raqami allaqachon ro'yxatdan o'tgan");
-    throw err;
+    throw conflictFrom(err);
   }
   return c.json({ token, user: userDto(user, c.env) }, 201);
 });
 
-// POST /api/auth/login — {phone, password} → {token, user}
+// POST /api/auth/register/start — {name, phone, email, password} → kod emailga yuboriladi.
+// → {ok, email, expires_in, resend_in} (+ dev_code faqat EMAIL_MOCK=1). Telefon/email band — 409.
+authRoutes.post('/auth/register/start', async (c) => {
+  requireEmailService(c.env);
+  await limitAuth(c);
+  const body = await readJson(c);
+  const name = parseName(body.name);
+  const email = parseEmail(body.email);
+  const phone = parsePhone(body.phone);
+  const password = parsePassword(body.password);
+  await assertFree(c.env.DB, { phone, email });
+  // Limitlar parol xeshidan oldin (PBKDF2 qimmat): qayta yuborish oralig'i, email/IP soatlik limit
+  await checkOtpSend(c, email, 'register');
+  const payload = JSON.stringify({ name, phone, password_hash: await hashPassword(password) });
+  const issued = await createAndSendOtp(c, { email, purpose: 'register', payload });
+  return c.json(otpResponse(c, email, issued));
+});
+
+// POST /api/auth/register/verify — {email, code} → 201 {token, user}. Hisob shu yerda yaratiladi (email tasdiqlangan).
+authRoutes.post('/auth/register/verify', async (c) => {
+  requireEmailService(c.env);
+  await limitAuth(c);
+  const body = await readJson(c);
+  const email = parseEmail(body.email);
+  const code = parseOtpCode(body.code);
+  const db = c.env.DB;
+  const otp = await consumeOtp(db, { purpose: 'register', email, code });
+  const p = readRegisterPayload(otp.payload);
+  if (!p) throw new ValidationError(CODE_EXPIRED);
+  // Kod kutilayotgan paytda telefon yoki email boshqa hisobga o'tgan bo'lishi mumkin
+  await assertFree(db, { phone: p.phone, email });
+
+  const { token, tokenHash } = await newToken();
+  let user;
+  try {
+    const [ins] = await db.batch([
+      db
+        .prepare(
+          `INSERT INTO users (phone, name, password_hash, email, email_verified_at)
+           VALUES (?1, ?2, ?3, ?4, datetime('now')) RETURNING ${USER_COLS}`,
+        )
+        .bind(p.phone, p.name, p.password_hash, email),
+      db
+        .prepare(`INSERT INTO sessions (token_hash, user_id, expires_at)
+                  SELECT ?1, id, datetime('now', '+${SESSION_DAYS} days') FROM users WHERE phone = ?2`)
+        .bind(tokenHash, p.phone),
+    ]);
+    user = ins.results[0];
+  } catch (err) {
+    throw conflictFrom(err);
+  }
+  return c.json({ token, user: userDto(user, c.env) }, 201);
+});
+
+// POST /api/auth/login — {login, password} (login — telefon yoki email) yoki eski {phone, password} → {token, user}
 authRoutes.post('/auth/login', async (c) => {
   await limitAuth(c);
   const body = await readJson(c);
@@ -239,31 +357,86 @@ authRoutes.post('/auth/login', async (c) => {
   if (!password) throw new ValidationError('Parolni kiriting');
   const db = c.env.DB;
 
-  // Noto'g'ri formatdagi telefon ham "noto'g'ri ma'lumot" (SPEC 5: 401), mavjud bo'lmagan raqam kabi
-  let phone = null;
+  const raw = typeof body.login === 'string' && body.login.trim() ? body.login : body.phone;
+  const byEmail = typeof raw === 'string' && raw.includes('@');
+  // Noto'g'ri formatdagi telefon/email ham "noto'g'ri ma'lumot" (SPEC 5: 401), mavjud bo'lmagan hisob kabi
+  let key = null;
   try {
-    phone = parsePhone(body.phone);
+    key = byEmail ? parseEmail(raw) : parsePhone(raw);
   } catch {
-    phone = null;
+    key = null;
   }
-  // Bitta raqamga parol tanlash: IP almashtirilsa ham telefon bo'yicha limit ishlaydi
-  if (phone) await limitLoginPhone(c, phone);
+  // Bitta hisobga parol tanlash: IP almashtirilsa ham telefon/email bo'yicha limit ishlaydi
+  if (key) await (byEmail ? limitLoginEmail(c, key) : limitLoginPhone(c, key));
 
-  const row = phone
+  const row = key
     ? await db
-        .prepare(`SELECT ${USER_COLS}, password_hash FROM users WHERE phone = ?1`)
-        .bind(phone)
+        .prepare(
+          `SELECT ${USER_COLS}, password_hash FROM users
+           WHERE ${byEmail ? 'email = ?1 AND email_verified_at IS NOT NULL' : 'phone = ?1'}`,
+        )
+        .bind(key)
         .first()
     : null;
-  // Foydalanuvchi bo'lmasa ham PBKDF2 bajariladi (vaqt orqali raqam borligini bilib bo'lmasin)
+  // Foydalanuvchi bo'lmasa ham PBKDF2 bajariladi (vaqt orqali hisob borligini bilib bo'lmasin)
   const ok = await verifyPassword(password.slice(0, PASSWORD_MAX + 1), row ? row.password_hash : DUMMY_HASH);
-  if (!row || !ok || password.length > PASSWORD_MAX) throw new AuthError("Telefon yoki parol noto'g'ri");
+  if (!row || !ok || password.length > PASSWORD_MAX) {
+    throw new AuthError(byEmail ? "Email yoki parol noto'g'ri" : "Telefon yoki parol noto'g'ri");
+  }
   // Bloklanganlik faqat to'g'ri paroldan keyin aytiladi
   if (row.blocked_at) throw new ForbiddenError(BLOCKED_MESSAGE);
 
   const { token, tokenHash } = await newToken();
   await db.batch([purgeExpired(db), insertSession(db, tokenHash, row.id)]);
   return c.json({ token, user: userDto(row, c.env) });
+});
+
+// POST /api/auth/forgot — {email} → doim 200 {ok, email, expires_in, resend_in} (hisob borligi aytilmaydi).
+// Kod faqat shu email tasdiqlangan (bloklanmagan) hisob bo'lsa yuboriladi; limitlar har doim bir xil qo'llanadi.
+// Xat fonda yuboriladi — javob vaqti ham hisob borligini bildirmasin. dev_code — faqat EMAIL_MOCK=1.
+authRoutes.post('/auth/forgot', async (c) => {
+  requireEmailService(c.env);
+  await limitAuth(c);
+  const body = await readJson(c);
+  const email = parseEmail(body.email);
+  await checkOtpSend(c, email, 'reset');
+  const user = await c.env.DB.prepare(
+    'SELECT id FROM users WHERE email = ?1 AND email_verified_at IS NOT NULL AND blocked_at IS NULL',
+  )
+    .bind(email)
+    .first();
+  const issued = user
+    ? await createAndSendOtp(c, { email, purpose: 'reset', userId: user.id, background: true })
+    : { ...otpTimings(c), code: null };
+  return c.json(otpResponse(c, email, issued));
+});
+
+// POST /api/auth/reset — {email, code, new_password} → {token, user}. Barcha eski sessiyalar o'chiriladi.
+authRoutes.post('/auth/reset', async (c) => {
+  requireEmailService(c.env);
+  await limitAuth(c);
+  const body = await readJson(c);
+  const email = parseEmail(body.email);
+  const code = parseOtpCode(body.code);
+  const password = parsePassword(body.new_password); // kod urinishi sarflanishidan oldin
+  const db = c.env.DB;
+  const otp = await consumeOtp(db, { purpose: 'reset', email, code });
+  // Kod yuborilgandan keyin email boshqa hisobga o'tgan / olib tashlangan bo'lsa — kod yaroqsiz
+  const user = await db
+    .prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?1 AND email = ?2`)
+    .bind(otp.user_id, email)
+    .first();
+  if (!user) throw new ValidationError(CODE_EXPIRED);
+  if (user.blocked_at) throw new ForbiddenError(BLOCKED_MESSAGE);
+
+  const passwordHash = await hashPassword(password);
+  const { token, tokenHash } = await newToken();
+  await db.batch([
+    db.prepare('UPDATE users SET password_hash = ?2 WHERE id = ?1').bind(user.id, passwordHash),
+    db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(user.id),
+    insertSession(db, tokenHash, user.id),
+  ]);
+  return c.json({ token, user: userDto(user, c.env) });
 });
 
 // POST /api/auth/logout — joriy sessiyani o'chiradi
@@ -357,4 +530,38 @@ authRoutes.post('/me/password', requireAuth, async (c) => {
     db.prepare('DELETE FROM sessions WHERE user_id = ?1 AND token_hash <> ?2').bind(user.id, c.get('tokenHash')),
   ]);
   return c.json({ ok: true });
+});
+
+// POST /api/me/email/start — {email} → tasdiqlash kodi shu emailga ({ok, email, expires_in, resend_in}, + dev_code
+// faqat EMAIL_MOCK=1). Email boshqa hisobda bo'lsa — 409. Kod shu foydalanuvchiga bog'lanadi.
+authRoutes.post('/me/email/start', requireAuth, async (c) => {
+  requireEmailService(c.env);
+  const user = c.get('user');
+  const body = await readJson(c);
+  const email = parseEmail(body.email);
+  if (user.email === email && user.email_verified_at) throw new ValidationError('Bu email allaqachon tasdiqlangan');
+  await assertFree(c.env.DB, { email, exceptId: user.id });
+  await checkOtpSend(c, email, 'verify');
+  const issued = await createAndSendOtp(c, { email, purpose: 'verify', userId: user.id });
+  return c.json(otpResponse(c, email, issued));
+});
+
+// POST /api/me/email/verify — {code} → {user} (email va email_verified_at yoziladi)
+authRoutes.post('/me/email/verify', requireAuth, async (c) => {
+  requireEmailService(c.env);
+  await limitAuth(c);
+  const user = c.get('user');
+  const code = parseOtpCode((await readJson(c)).code);
+  const db = c.env.DB;
+  const otp = await consumeOtp(db, { purpose: 'verify', userId: user.id, code });
+  try {
+    await db
+      .prepare("UPDATE users SET email = ?2, email_verified_at = datetime('now') WHERE id = ?1")
+      .bind(user.id, otp.email)
+      .run();
+  } catch (err) {
+    throw conflictFrom(err);
+  }
+  const row = await db.prepare(`SELECT ${USER_COLS} FROM users WHERE id = ?1`).bind(user.id).first();
+  return c.json({ user: userDto(row, c.env) });
 });

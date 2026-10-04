@@ -1,6 +1,7 @@
 // hasharchilar API testi — `wrangler dev` (lokal D1 yoki Durable Object + R2) ga qarshi.
-// Ishga tushirish: npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099  &&  npm run test:api
-// (admin panel testlari — tests/admin.test.mjs)
+// Ishga tushirish: npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1
+//   && npm run test:api
+// (admin panel testlari — tests/admin.test.mjs, email/OTP — tests/email.test.mjs)
 // DO rejimi: STORAGE=do (wrangler dev --config wrangler.deploy.json, generatsiya: --storage do).
 // Bo'sh bo'lmagan bazada ham qayta ishlaydi: har safar tasodifiy telefonlar va IP lar.
 import { test, describe, before, after } from 'node:test';
@@ -9,7 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomIp, randomPhone, register, rnd, tashkentDate } from './helpers.mjs';
+import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomEmail, randomIp, randomPhone, register, rnd, tashkentDate } from './helpers.mjs';
 
 const IS_LOCAL_SERVER = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE);
 const STORAGE = process.env.STORAGE === 'do' ? 'do' : 'd1'; // serverdagi baza turi
@@ -31,34 +32,45 @@ test("noma'lum /api marshruti → 404 JSON", async () => {
 describe('Autentifikatsiya', () => {
   const ip = randomIp();
   const phone = randomPhone();
+  const email = randomEmail('auth');
   let token;
 
-  test("ro'yxat → 201, telefon normallashadi", async () => {
+  // Ro'yxat — email orqali (register/start → kod → register/verify); batafsil: tests/email.test.mjs
+  test("ro'yxat → 201, telefon normallashadi, email tasdiqlangan", async () => {
     const local = phone.slice(4); // 9 xonali
     const spaced = `${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5, 7)} ${local.slice(7)}`;
-    const r = await api('/api/auth/register', { method: 'POST', ip, json: { name: '  Aziz  Test ', phone: spaced, password: 'parol123' } });
+    const s = await api('/api/auth/register/start', {
+      method: 'POST',
+      ip,
+      json: { name: '  Aziz  Test ', phone: spaced, email: ` ${email.toUpperCase()} `, password: 'parol123' },
+    });
+    assert.equal(s.status, 200, JSON.stringify(s.data));
+    assert.equal(s.data.email, email);
+    const r = await api('/api/auth/register/verify', { method: 'POST', ip, json: { email, code: s.data.dev_code } });
     assert.equal(r.status, 201, JSON.stringify(r.data));
     assert.match(r.data.token, /^[A-Za-z0-9_-]{43}$/);
     assert.equal(r.data.user.phone, phone);
     assert.equal(r.data.user.name, 'Aziz Test');
+    assert.equal(r.data.user.email, email);
+    assert.equal(r.data.user.email_verified, true);
     assert.equal(typeof r.data.user.id, 'number');
     assert.equal(r.data.user.password_hash, undefined);
     assert.equal(r.data.user.is_admin, false, 'oddiy foydalanuvchi admin emas');
   });
 
   test('band telefon → 409', async () => {
-    const r = await api('/api/auth/register', { method: 'POST', ip, json: { name: 'Boshqa', phone, password: 'parol123' } });
+    const r = await api('/api/auth/register/start', { method: 'POST', ip, json: { name: 'Boshqa', phone, email: randomEmail(), password: 'parol123' } });
     assert.equal(r.status, 409);
     assert.ok(r.data.error);
   });
 
   test("noto'g'ri telefon → 400", async () => {
-    const r = await api('/api/auth/register', { method: 'POST', ip, json: { name: 'Test', phone: '12345', password: 'parol123' } });
+    const r = await api('/api/auth/register/start', { method: 'POST', ip, json: { name: 'Test', phone: '12345', email: randomEmail(), password: 'parol123' } });
     assert.equal(r.status, 400);
   });
 
   test('qisqa parol → 400', async () => {
-    const r = await api('/api/auth/register', { method: 'POST', ip, json: { name: 'Test', phone: randomPhone(), password: '123' } });
+    const r = await api('/api/auth/register/start', { method: 'POST', ip, json: { name: 'Test', phone: randomPhone(), email: randomEmail(), password: '123' } });
     assert.equal(r.status, 400);
   });
 

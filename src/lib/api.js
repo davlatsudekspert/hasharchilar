@@ -4,12 +4,18 @@ import { API_BASE } from './config.js';
 import { mirrorToken } from './native.js';
 import { storage, TOKEN_KEY } from './storage.js';
 
-/** HTTP status bilan xato (UI faqat `message` ni ko'rsatadi). */
+/**
+ * HTTP status bilan xato (UI faqat `message` ni ko'rsatadi).
+ * `code` — serverning mashina o'qiydigan belgisi ('email_unverified', 'email_required'),
+ * `retryAfter` — 429 da necha soniyadan keyin qayta urinish mumkin.
+ */
 export class ApiError extends Error {
-  constructor(message, status = 0) {
+  constructor(message, status = 0, { code = null, retryAfter = 0 } = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
+    this.retryAfter = retryAfter;
   }
 }
 
@@ -29,6 +35,13 @@ const unauthorizedListeners = new Set();
 export function onUnauthorized(fn) {
   unauthorizedListeners.add(fn);
   return () => unauthorizedListeners.delete(fn);
+}
+
+// 403 {code: 'email_unverified'} bo'lganda "Emailni tasdiqlang" oynasini ochish uchun obunachilar
+const unverifiedListeners = new Set();
+export function onEmailUnverified(fn) {
+  unverifiedListeners.add(fn);
+  return () => unverifiedListeners.delete(fn);
 }
 
 /** Server xato matn qaytarmasa — status bo'yicha o'zbekcha xabar. */
@@ -88,7 +101,24 @@ export async function request(path, { method = 'GET', json, form, signal, keepSe
     });
   }
 
-  if (!res.ok) throw new ApiError((data && data.error) || fallbackMessage(res.status), res.status);
+  if (!res.ok) {
+    const code = (data && data.code) || null;
+    if (res.status === 403 && code === 'email_unverified') {
+      unverifiedListeners.forEach((fn) => {
+        try {
+          fn();
+        } catch {
+          /* e'tiborsiz */
+        }
+      });
+    }
+    throw new ApiError((data && data.error) || fallbackMessage(res.status), res.status, {
+      code,
+      retryAfter: Number(res.headers.get('retry-after')) || 0,
+    });
+  }
+  // Lokal dev / testlar (server EMAIL_MOCK=1): emailga ketmagan kod konsolda ko'rinadi
+  if (data && data.dev_code) console.info(`[EMAIL_MOCK] ${data.email || ''} kodi: ${data.dev_code}`);
   return data;
 }
 
@@ -103,10 +133,17 @@ const qs = (params) => {
 // ---------- API metodlari (SPEC 5-bo'lim) ----------
 export const api = {
   // Auth
-  register: (body) => request('/auth/register', { method: 'POST', json: body }),
+  config: () => request('/config'),
+  register: (body) => request('/auth/register', { method: 'POST', json: body }), // eski (email o'chiq bo'lsa)
+  registerStart: (body) => request('/auth/register/start', { method: 'POST', json: body }),
+  registerVerify: (email, code) => request('/auth/register/verify', { method: 'POST', json: { email, code } }),
   login: (body) => request('/auth/login', { method: 'POST', json: body }),
+  forgot: (email) => request('/auth/forgot', { method: 'POST', json: { email } }),
+  reset: (email, code, new_password) => request('/auth/reset', { method: 'POST', json: { email, code, new_password } }),
   logout: () => request('/auth/logout', { method: 'POST' }),
   me: () => request('/me'),
+  emailStart: (email) => request('/me/email/start', { method: 'POST', json: { email } }),
+  emailVerify: (code) => request('/me/email/verify', { method: 'POST', json: { code } }),
 
   // Umumiy
   stats: () => request('/stats'),

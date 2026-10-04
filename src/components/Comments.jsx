@@ -14,7 +14,7 @@ const MAX = 500;
 
 export default function Comments({ hasharId, onCount }) {
   const { user } = useAuth();
-  const { requireAuth } = useActions();
+  const { requireVerified } = useActions();
   const toast = useToast();
   const c = useApi(`comments:${hasharId}`, () => api.comments(hasharId));
   const [body, setBody] = useState('');
@@ -27,7 +27,7 @@ export default function Comments({ hasharId, onCount }) {
     e.preventDefault();
     const text = body.trim();
     if (!text) return;
-    if (!(await requireAuth('comment'))) return;
+    if (!(await requireVerified('comment'))) return;
     setBusy(true);
     try {
       const created = await api.addComment(hasharId, text);

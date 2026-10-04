@@ -5,11 +5,13 @@ import { CheckCircleIcon } from '../components/icons.jsx';
 import Logo from '../components/Logo.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { navigate } from '../lib/router.js';
+import { useServerConfig } from '../lib/serverConfig.js';
 
 const PERKS = ["Bir bosishda hasharlarga qo'shiling", "O'z hasharingizni e'lon qiling", "Ball to'plang va nishonlar oling", 'Natijalaringizni profilda saqlang'];
 
 export default function LoginPage({ route }) {
   const { user, ready } = useAuth();
+  const { email_enabled: emailOn } = useServerConfig();
   const next = route.query.next && route.query.next.startsWith('/') ? route.query.next : '/profil';
 
   useEffect(() => {
@@ -35,10 +37,12 @@ export default function LoginPage({ route }) {
           </ul>
         </div>
       </div>
-      <div className="mx-auto w-full max-w-md">
+      <div className="mx-auto w-full min-w-0 max-w-md">
         <div className="rounded-[28px] border border-line bg-surface p-6 shadow-soft sm:p-8">
           <h1 className="text-2xl font-extrabold text-ink">Xush kelibsiz!</h1>
-          <p className="mb-6 mt-1 text-sm text-ink-3">Telefon raqamingiz bilan kiring yoki ro'yxatdan o'ting.</p>
+          <p className="mb-6 mt-1 text-sm text-ink-3">
+            {emailOn ? "Telefon raqamingiz yoki emailingiz bilan kiring, yoki ro'yxatdan o'ting." : "Telefon raqamingiz bilan kiring yoki ro'yxatdan o'ting."}
+          </p>
           <AuthForm reason={route.query.reason} initialMode={route.query.mode === 'register' ? 'register' : 'login'} onSuccess={() => navigate(next, { replace: true })} />
         </div>
       </div>

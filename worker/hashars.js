@@ -1,6 +1,6 @@
 // Hashar marshrutlari: ro'yxat, tafsilot, yaratish, qatnashish, yakunlash, o'chirish.
 import { Hono } from 'hono';
-import { requireAuth } from './auth.js';
+import { requireVerifiedEmail } from './auth.js';
 import { limitCreate, limitJoin } from './ratelimit.js';
 import { avatarUrl, deletePhotos, mediaUrl, readPhoto, storePhoto } from './media.js';
 import {
@@ -274,7 +274,7 @@ hasharRoutes.get('/:id', async (c) => {
 });
 
 // POST /api/hashars — multipart: title, description, address, lat, lng, date_time, items, photo?
-hasharRoutes.post('/', requireAuth, async (c) => {
+hasharRoutes.post('/', requireVerifiedEmail, async (c) => {
   const user = c.get('user');
   const db = c.env.DB;
   const form = await readForm(c);
@@ -318,7 +318,7 @@ hasharRoutes.post('/', requireAuth, async (c) => {
 });
 
 // POST /api/hashars/:id/join — idempotent
-hasharRoutes.post('/:id/join', requireAuth, async (c) => {
+hasharRoutes.post('/:id/join', requireVerifiedEmail, async (c) => {
   const id = parseId(c.req.param('id'));
   const uid = c.get('user').id;
   const db = c.env.DB;
@@ -350,7 +350,7 @@ hasharRoutes.post('/:id/join', requireAuth, async (c) => {
 });
 
 // DELETE /api/hashars/:id/join — chiqish (egasi chiqa olmaydi)
-hasharRoutes.delete('/:id/join', requireAuth, async (c) => {
+hasharRoutes.delete('/:id/join', requireVerifiedEmail, async (c) => {
   const id = parseId(c.req.param('id'));
   const uid = c.get('user').id;
   const db = c.env.DB;
@@ -367,7 +367,7 @@ hasharRoutes.delete('/:id/join', requireAuth, async (c) => {
 });
 
 // POST /api/hashars/:id/complete — multipart photo (AFTER, majburiy); faqat egasi
-hasharRoutes.post('/:id/complete', requireAuth, async (c) => {
+hasharRoutes.post('/:id/complete', requireVerifiedEmail, async (c) => {
   const id = parseId(c.req.param('id'));
   const uid = c.get('user').id;
   const db = c.env.DB;
@@ -409,7 +409,7 @@ hasharRoutes.post('/:id/complete', requireAuth, async (c) => {
 });
 
 // DELETE /api/hashars/:id — faqat egasi va faqat PENDING; R2 rasmlari ham o'chiriladi
-hasharRoutes.delete('/:id', requireAuth, async (c) => {
+hasharRoutes.delete('/:id', requireVerifiedEmail, async (c) => {
   const id = parseId(c.req.param('id'));
   const uid = c.get('user').id;
   const db = c.env.DB;

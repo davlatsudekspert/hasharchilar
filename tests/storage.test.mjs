@@ -414,6 +414,11 @@ INSERT INTO rate_limits (key, window_start, count) VALUES ('auth:127.0.0.1', 100
 const EXTRA_ROWS_V3 = `
 INSERT INTO geo_cache (key, value, created_at) VALUES ('s:chilonzor', '[]', 1000);
 `;
+// 0004_email dan keyin paydo bo'lgan jadval
+const EXTRA_ROWS_V4 = `
+INSERT INTO email_otps (email, purpose, user_id, code_hash, expires_at, created_at)
+  VALUES ('aziz@example.com', 'reset', 1, 'abc', 2000, 1000);
+`;
 
 async function upgrade(server, body) {
   const res = await fetch(server.url, { method: 'POST', body: JSON.stringify({ target: 'upgrade', ...body }) });
@@ -424,8 +429,9 @@ async function upgrade(server, body) {
 describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo'llanadi", () => {
   let dir;
   let server;
-  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3;
-  // Eski (0003 dan oldingi) sxemaga yozilgan namuna: yangi migratsiyalar shu ma'lumot ustida sinaladi
+  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
+  // Eski sxemalarga yozilgan namunalar: yangi migratsiyalar shu ma'lumot ustida sinaladi
+  const seedV3 = readFileSync(join(ROOT, 'tests/fixtures/seed-v3.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3;
   const seedV2 = readFileSync(join(ROOT, 'tests/fixtures/seed-v2.sql'), 'utf8') + EXTRA_ROWS;
   const files = MIGRATION_FILES;
 
@@ -442,9 +448,15 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
   test("0001 dan keyin namuna ma'lumot → qolgan migratsiyalar birma-bir", async () => {
     // Har bir namuna u qo'llanadigan har bir bosqichdan boshlab sinaladi
     const migratedWithData = new Set();
-    // seed-v2.sql — faqat 0003 dan oldingi bosqichlarda (keyin yangi jadvallar bo'sh qoladi)
+    // seed-v2.sql — faqat 0003 dan oldingi, seed-v3.sql — 0004 dan oldingi bosqichlarda
+    // (keyin yangi jadvallar bo'sh qoladi)
     const v2Max = files.indexOf('0003_v3.sql');
-    for (const [label, sql, maxK] of [['seed.sql', seed, files.length], ['seed-v2.sql', seedV2, v2Max]]) {
+    const v3Max = files.indexOf('0004_email.sql');
+    for (const [label, sql, maxK] of [
+      ['seed.sql', seed, files.length],
+      ['seed-v3.sql', seedV3, v3Max],
+      ['seed-v2.sql', seedV2, v2Max],
+    ]) {
       let checked = 0;
       for (let k = 1; k <= maxK; k++) {
         const r = await upgrade(server, { name: `real-${label}-${k}`, before: k, seed: sql });
@@ -486,7 +498,8 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
       ],
     });
     assert.ok(!r.seedError, r.seedError);
-    assert.deepEqual(r.steps, [{ name: '0003_v3.sql', ok: true }]);
+    // 0003 va undan keyingi barcha migratsiyalar (keyingilari ham shu ma'lumotda o'tishi shart)
+    assert.deepEqual(r.steps, files.slice(at).map((name) => ({ name, ok: true })));
     const [cats, defaults, users, ins, geo, badCat, emptyBody, , cascade] = r.checks;
     assert.deepEqual(cats.rows, [{ category: 'cleaning', max_volunteers: null }]);
     assert.equal(defaults.rows[0].n, users.rows[0].n);
@@ -495,6 +508,48 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
     assert.match(badCat.error, /CHECK constraint failed/);
     assert.match(emptyBody.error, /CHECK constraint failed/);
     assert.equal(cascade.rows[0].n, 0, "hashar o'chganda izohlari ham o'chdi");
+  });
+
+  test("0004_email: email normallashadi, takrorlar NULL, UNIQUE indeks va email_otps ishlaydi", async () => {
+    const at = files.indexOf('0004_email.sql');
+    assert.ok(at > 0);
+    // 0004 dan oldin email ustuni bor (0001), lekin indeks yo'q: katta harf / bo'sh / takror qiymatlar bo'lishi mumkin
+    const dirty = `${seedV3}
+UPDATE users SET email = '  Aziz@Example.COM ' WHERE id = 1;
+UPDATE users SET email = 'aziz@example.com' WHERE id = 2;
+UPDATE users SET email = '   ' WHERE id = 3;`;
+    const r = await upgrade(server, {
+      name: 'email-upgrade',
+      before: at,
+      seed: dirty,
+      checks: [
+        'SELECT id, email, email_verified_at FROM users ORDER BY id',
+        "UPDATE users SET email = 'aziz@example.com' WHERE id = 3",
+        "UPDATE users SET email = 'jasur@example.com', email_verified_at = datetime('now') WHERE id = 3",
+        'UPDATE users SET email = NULL WHERE id = 1',
+        'SELECT COUNT(*) AS n FROM users WHERE email IS NULL',
+        `INSERT INTO email_otps (email, purpose, code_hash, payload, expires_at, created_at)
+           VALUES ('a@b.uz', 'register', 'h', '{}', 2, 1) RETURNING id, attempts, consumed_at, user_id`,
+        "INSERT INTO email_otps (email, purpose, code_hash, expires_at, created_at) VALUES ('a@b.uz', 'boshqa', 'h', 2, 1)",
+        "INSERT INTO email_otps (email, purpose, expires_at, created_at) VALUES ('a@b.uz', 'reset', 2, 1)",
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('users', 'email_otps') AND name LIKE 'idx_%' ORDER BY name",
+      ],
+    });
+    assert.ok(!r.seedError, r.seedError);
+    assert.deepEqual(r.steps, files.slice(at).map((name) => ({ name, ok: true })));
+    const [users, dup, setOwn, clear, nulls, ins, badPurpose, noHash, idx] = r.checks;
+    assert.deepEqual(users.rows, [
+      { id: 1, email: 'aziz@example.com', email_verified_at: null },
+      { id: 2, email: null, email_verified_at: null },
+      { id: 3, email: null, email_verified_at: null },
+    ]);
+    assert.match(dup.error, /UNIQUE constraint failed: users\.email/);
+    assert.ok(!setOwn.error && !clear.error, `${setOwn.error} ${clear.error}`);
+    assert.equal(nulls.rows[0].n, 2, "bir nechta NULL email ruxsat etiladi");
+    assert.deepEqual(ins.rows, [{ id: 1, attempts: 0, consumed_at: null, user_id: null }]);
+    assert.match(badPurpose.error, /CHECK constraint failed/);
+    assert.match(noHash.error, /NOT NULL constraint failed/);
+    assert.deepEqual(idx.rows.map((x) => x.name), ['idx_email_otps_lookup', 'idx_email_otps_user', 'idx_users_email']);
   });
 
   test("tekshiruvning o'zi: to'la bazada yiqiladigan migratsiya ushlanadi, ma'lumot buzilmaydi", async () => {

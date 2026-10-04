@@ -1,4 +1,4 @@
-// API testlari uchun umumiy yordamchilar (tests/api.test.mjs, tests/admin.test.mjs).
+// API testlari uchun umumiy yordamchilar (tests/api.test.mjs, tests/admin.test.mjs, tests/email.test.mjs).
 import assert from 'node:assert/strict';
 import { deflateSync } from 'node:zlib';
 
@@ -10,6 +10,8 @@ export const RUN = Math.random().toString(36).slice(2, 8); // shu yugurish uchun
 export const rnd = (n) => Math.floor(Math.random() * n);
 export const randomPhone = () => `+99890${String(rnd(1e7)).padStart(7, '0')}`;
 export const randomIp = () => `10.${rnd(250) + 1}.${rnd(250) + 1}.${rnd(250) + 1}`;
+/** Noyob soxta email (server EMAIL_MOCK=1 bilan — xat yuborilmaydi). */
+export const randomEmail = (tag = 't') => `${tag}.${RUN}.${Date.now().toString(36)}${rnd(1e6).toString(36)}@example.com`;
 
 /** Tashkent vaqti (UTC+5) bo'yicha `days` kun keyingi 'YYYY-MM-DDTHH:MM'. */
 export function tashkentDate(days) {
@@ -76,13 +78,46 @@ export async function api(path, { method = 'GET', token, ip, json, form, headers
   return { status: res.status, headers: res.headers, data, buf };
 }
 
-/** Yangi foydalanuvchi ro'yxatdan o'tkazadi → { token, user, phone, password }. */
-export async function register(name = 'Test Foydalanuvchi') {
-  const phone = randomPhone();
-  const password = 'parol123';
-  const r = await api('/api/auth/register', { method: 'POST', json: { name, phone, password } });
+/**
+ * Email orqali ro'yxat (register/start → dev_code → register/verify). Server EMAIL_MOCK=1 bilan ishga tushgan
+ * bo'lishi shart (dev_code faqat shunda qaytadi). Natija: { token, user, phone, email, password }.
+ */
+export async function register(name = 'Test Foydalanuvchi', { phone = randomPhone(), email = randomEmail(), password = 'parol123' } = {}) {
+  const start = await api('/api/auth/register/start', { method: 'POST', json: { name, phone, email, password } });
+  assert.equal(
+    start.status,
+    200,
+    `register/start: ${JSON.stringify(start.data)} — server EMAIL_MOCK siz? (wrangler dev ... --var EMAIL_MOCK:1)`,
+  );
+  assert.match(String(start.data.dev_code), /^\d{6}$/, 'dev_code yo\'q — server EMAIL_MOCK:1 bilan ishga tushirilsin');
+  const r = await api('/api/auth/register/verify', { method: 'POST', json: { email, code: start.data.dev_code } });
   assert.equal(r.status, 201, JSON.stringify(r.data));
+  return { token: r.data.token, user: r.data.user, phone, email: start.data.email, password };
+}
+
+/**
+ * Emailsiz "eski" hisob (email joriy qilinishidan oldingi foydalanuvchilar kabi, email tasdiqlanmagan).
+ * Faqat EMAIL_MOCK=1 serverda: test sarlavhasi `x-test-legacy-register` 410 ni chetlab o'tadi.
+ */
+export async function registerLegacy(name = 'Eski Foydalanuvchi', { phone = randomPhone(), password = 'parol123' } = {}) {
+  const r = await api('/api/auth/register', {
+    method: 'POST',
+    json: { name, phone, password },
+    headers: { 'x-test-legacy-register': '1' },
+  });
+  assert.equal(r.status, 201, JSON.stringify(r.data));
+  assert.equal(r.data.user.email_verified, false);
   return { token: r.data.token, user: r.data.user, phone, password };
+}
+
+/** Tizimga kirgan foydalanuvchi emailini tasdiqlaydi (me/email/start → dev_code → verify) → user. */
+export async function verifyEmail(token, email = randomEmail('v')) {
+  const s = await api('/api/me/email/start', { method: 'POST', token, json: { email } });
+  assert.equal(s.status, 200, JSON.stringify(s.data));
+  const v = await api('/api/me/email/verify', { method: 'POST', token, json: { code: s.data.dev_code } });
+  assert.equal(v.status, 200, JSON.stringify(v.data));
+  assert.equal(v.data.user.email_verified, true);
+  return v.data.user;
 }
 
 /** Hashar yaratish formasi (o'zgartirishlar bilan). */
@@ -101,4 +136,32 @@ export function hasharForm(over = {}, photo = { bytes: PNG_BEFORE, type: 'image/
   for (const [k, v] of Object.entries(fields)) if (v !== undefined) fd.append(k, v);
   if (photo) fd.append('photo', new Blob([photo.bytes], { type: photo.type }), photo.name);
   return fd;
+}
+
+// ---------- Admin (server ADMIN_PHONES bilan ishga tushgan bo'lishi shart) ----------
+
+export const ADMIN_PHONE = process.env.ADMIN_PHONE || '+998900000099';
+export const ADMIN_PASSWORD = 'admin-test-123';
+
+/**
+ * ADMIN_PHONES dagi raqam bilan ro'yxat (email orqali) yoki kirish → { token, user }.
+ * Hisob bor-u, email tasdiqlanmagan bo'lsa (eski baza) — email shu yerda tasdiqlanadi.
+ */
+export async function adminLogin() {
+  const start = await api('/api/auth/register/start', {
+    method: 'POST',
+    json: { name: 'Test Admin', phone: ADMIN_PHONE, email: randomEmail('admin'), password: ADMIN_PASSWORD },
+  });
+  if (start.status === 200) {
+    const reg = await api('/api/auth/register/verify', { method: 'POST', json: { email: start.data.email, code: start.data.dev_code } });
+    if (reg.status === 201) return reg.data;
+    // Parallel test fayli shu raqamni bir lahza oldin ro'yxatdan o'tkazgan — kiramiz
+    assert.equal(reg.status, 409, JSON.stringify(reg.data));
+  } else {
+    assert.equal(start.status, 409, JSON.stringify(start.data));
+  }
+  const r = await api('/api/auth/login', { method: 'POST', json: { phone: ADMIN_PHONE, password: ADMIN_PASSWORD } });
+  assert.equal(r.status, 200, `admin test hisobiga kirib bo'lmadi: ${JSON.stringify(r.data)}`);
+  if (!r.data.user.email_verified) r.data.user = await verifyEmail(r.data.token, randomEmail('admin'));
+  return r.data;
 }

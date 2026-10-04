@@ -2,8 +2,10 @@
 import { useState } from 'react';
 import { appDownloadUrl } from '../components/AppBanner.jsx';
 import AuthForm from '../components/AuthForm.jsx';
+import { EmailVerifyFlow } from '../components/EmailOtp.jsx';
 import { HasharRow } from '../components/HasharCard.jsx';
 import {
+  CheckIcon,
   ChevronRightIcon,
   DownloadIcon,
   EditIcon,
@@ -11,6 +13,7 @@ import {
   HandIcon,
   InfoIcon,
   LogOutIcon,
+  MailIcon,
   MedalIcon,
   PlusIcon,
   SettingsIcon,
@@ -28,6 +31,7 @@ import { useAuth } from '../lib/auth.jsx';
 import { IS_NATIVE, SITE_URL } from '../lib/config.js';
 import { haptic, shareLink } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
+import { useServerConfig } from '../lib/serverConfig.js';
 import { clearCache, useApi } from '../lib/store.js';
 import { cx } from '../lib/utils.js';
 
@@ -115,6 +119,84 @@ function SettingsRow({ icon: Icon, title, text, onClick, href, danger, children,
   );
 }
 
+/** Sozlamalar → Email: tasdiqlangan email + belgi, yoki "Email qo'shish" (kod bilan tasdiqlash). */
+function EmailCard() {
+  const { user, setUser, refresh } = useAuth();
+  const { email_enabled: emailOn } = useServerConfig();
+  const toast = useToast();
+  const [editing, setEditing] = useState(false);
+  if (!emailOn && !user.email) return null;
+  const verified = Boolean(user.email_verified && user.email);
+
+  const done = (u) => {
+    setUser(u);
+    refresh().catch(() => {});
+    setEditing(false);
+    toast('Email tasdiqlandi');
+  };
+
+  return (
+    <section aria-labelledby="email-card-title" className="rounded-3xl border border-line bg-surface p-5 shadow-soft" data-testid="email-card">
+      <div className="flex items-start gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface-2 text-brand ring-1 ring-line">
+          <MailIcon className="h-5 w-5" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 id="email-card-title" className="text-base font-extrabold text-ink">
+              Email
+            </h3>
+            {verified ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300">
+                <CheckIcon className="h-3 w-3" strokeWidth={3} /> Tasdiqlangan
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-900 dark:bg-amber-400/15 dark:text-amber-300">
+                Tasdiqlanmagan
+              </span>
+            )}
+          </div>
+          {verified ? (
+            <p className="mt-0.5 font-semibold break-all text-ink-2" data-testid="profile-email">
+              {user.email}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-sm text-ink-3">Hashar e'lon qilish, qo'shilish, izoh yozish va parolni tiklash uchun kerak. Boshqalarga ko'rinmaydi.</p>
+          )}
+        </div>
+        {verified && emailOn && !editing && (
+          <button type="button" onClick={() => setEditing(true)} className={cx(btn.outline, 'h-10 shrink-0 px-3.5 text-sm max-sm:hidden')}>
+            O'zgartirish
+          </button>
+        )}
+      </div>
+      {verified && emailOn && !editing && (
+        <button type="button" onClick={() => setEditing(true)} className={cx(btn.outline, 'mt-4 h-11 w-full text-sm sm:hidden')}>
+          Emailni o'zgartirish
+        </button>
+      )}
+      {emailOn && (!verified || editing) && (
+        <div className="mt-4">
+          {editing ? (
+            <EmailVerifyFlow
+              onVerified={done}
+              footer={
+                <button type="button" onClick={() => setEditing(false)} className={cx(btn.ghost, 'h-11 w-full')}>
+                  Bekor qilish
+                </button>
+              }
+            />
+          ) : (
+            <button type="button" onClick={() => setEditing(true)} className={cx(btn.primary, 'h-12 w-full sm:w-auto sm:px-6')}>
+              <MailIcon className="h-5 w-5" /> Email qo'shish
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function Settings({ onEdit, appInfo }) {
   const { user, logout } = useAuth();
   const toast = useToast();
@@ -133,6 +215,8 @@ function Settings({ onEdit, appInfo }) {
   };
   return (
     <div className="space-y-5">
+      <EmailCard />
+
       <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft">
         <h3 className="text-base font-extrabold text-ink">Ko'rinish</h3>
         <p className="mb-3 text-sm text-ink-3">Tungi rejim ko'zni charchatmaydi va batareyani tejaydi.</p>

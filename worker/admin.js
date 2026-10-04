@@ -51,7 +51,7 @@ const searchQuery = (c) => cleanLine(c.req.query('q')).slice(0, 100);
 // ---------- Foydalanuvchilar ----------
 
 const USER_SELECT = `
-  SELECT u.id, u.name, u.phone, u.role, u.blocked_at, u.created_at,
+  SELECT u.id, u.name, u.phone, u.email, u.email_verified_at, u.role, u.blocked_at, u.created_at,
          (SELECT COUNT(*) FROM hashars h WHERE h.creator_id = u.id) AS created_count,
          (SELECT COUNT(*) FROM volunteers v JOIN hashars h ON h.id = v.hashar_id
             WHERE v.user_id = u.id AND h.creator_id <> u.id) AS joined_count
@@ -62,6 +62,8 @@ const adminUserDto = (u, env) => ({
   id: u.id,
   name: u.name,
   phone: u.phone,
+  email: u.email ?? null,
+  email_verified: Boolean(u.email_verified_at),
   role: u.role,
   is_admin: isAdmin(u, env),
   env_admin: isEnvAdmin(u.phone, env),
@@ -133,7 +135,7 @@ adminRoutes.get('/overview', async (c) => {
   });
 });
 
-// GET /api/admin/users?q=&offset=&limit= — ism yoki telefon bo'yicha qidiruv, yangilari birinchi
+// GET /api/admin/users?q=&offset=&limit= — ism, telefon yoki email bo'yicha qidiruv, yangilari birinchi
 adminRoutes.get('/users', async (c) => {
   const db = c.env.DB;
   const { offset, limit } = paging(c);
@@ -141,9 +143,9 @@ adminRoutes.get('/users', async (c) => {
   const params = [];
   const q = searchQuery(c);
   if (q) {
-    const conds = ["u.name LIKE ? ESCAPE '\\'", "u.phone LIKE ? ESCAPE '\\'"];
+    const conds = ["u.name LIKE ? ESCAPE '\\'", "u.phone LIKE ? ESCAPE '\\'", "u.email LIKE ? ESCAPE '\\'"];
     const like = likePattern(q);
-    params.push(like, like);
+    params.push(like, like, like);
     // "90 123 45 67" kabi bo'shliqli / qavsli raqam ham topilsin (faqat raqamga o'xshash so'zda)
     const digits = q.replace(/\D/g, '');
     if (digits && digits !== q && /^[\d\s()+-]+$/.test(q)) {
@@ -195,7 +197,7 @@ adminRoutes.post('/users/:id/role', async (c) => {
   return c.json({ user: adminUserDto(await loadUser(db, id), c.env) });
 });
 
-// DELETE /api/admin/users/:id — foydalanuvchi, sessiyalari, qatnashuvlari, hasharlari, izohlari
+// DELETE /api/admin/users/:id — foydalanuvchi, sessiyalari, email kodlari, qatnashuvlari, hasharlari, izohlari
 // (+ hashar rasmlari va avatar R2 dan)
 adminRoutes.delete('/users/:id', async (c) => {
   const db = c.env.DB;
@@ -204,7 +206,7 @@ adminRoutes.delete('/users/:id', async (c) => {
   const own = 'SELECT id FROM hashars WHERE creator_id = ?1';
   // Bitta tranzaksiya; rasm kalitlari ham shu tranzaksiya ichida olinadi (orada qo'shilgani qolib ketmasin)
   // Bog'liq qatorlar (izohlar ham) oldindan o'chiriladi: meta.changes FK kaskadi bilan ortib ketmasin
-  const [media, , , , , , delUser] = await db.batch([
+  const [media, , , , , , , delUser] = await db.batch([
     db
       .prepare(
         `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
@@ -212,6 +214,7 @@ adminRoutes.delete('/users/:id', async (c) => {
       )
       .bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
+    db.prepare('DELETE FROM email_otps WHERE user_id = ?1 OR email = (SELECT email FROM users WHERE id = ?1)').bind(id),
     db.prepare(`DELETE FROM comments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare(`DELETE FROM hashar_media WHERE hashar_id IN (${own})`).bind(id),
     db.prepare(`DELETE FROM volunteers WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),

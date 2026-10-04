@@ -29,13 +29,17 @@ Batafsil texnik shartnoma: [`SPEC.md`](./SPEC.md).
    • D1 "hasharchilar" (binding DB)          before/<uuid>.jpg, after/<uuid>.jpg
    • yoki SQLite Durable Object HasharDB     (zaxira: app/hasharchilar.apk)
      (binding HASHAR_DB, obyekt "main")
-   users, sessions, hashars, hashar_media, volunteers, rate_limits
+   users, sessions, hashars, hashar_media, volunteers, rate_limits,
+   comments, geo_cache, email_otps                 Resend API (email kodlari, RESEND_API_KEY)
 ```
 
 - **Stek:** React 18 · Vite 6 · Tailwind CSS v4 · MapLibre GL 5 + OpenFreeMap (kalitsiz vektor xarita) ·
   Inter / Manrope (fontsource, bundle ichida) · Hono 4 · Cloudflare Workers + D1 / SQLite Durable Object + R2 ·
   Capacitor 8 (Android: app, camera, geolocation, haptics, network, preferences, share, splash-screen, status-bar).
-- **Autentifikatsiya:** ism + telefon (+998…) + parol. Parol PBKDF2-SHA256 (100 000 iteratsiya) bilan saqlanadi.
+- **Autentifikatsiya:** ism + **email** + telefon (+998…) + parol. Ro'yxat ikki bosqichli: emailga 6 xonali kod
+  (Resend) → kod tasdiqlangach hisob yaratiladi. Kirish — telefon **yoki** email + parol; parolni unutganda —
+  email kodi bilan tiklash. Batafsil: [Email bilan ro'yxat va tasdiqlash](#email-bilan-royxat-va-tasdiqlash).
+  Parol PBKDF2-SHA256 (100 000 iteratsiya) bilan saqlanadi.
   Sessiya tokeni `localStorage['hashar_token']` da turadi va `Authorization: Bearer <token>` sarlavhasida yuboriladi.
   Cookie ishlatilmaydi. Sessiya 90 kun amal qiladi.
 - **Rasmlar:** brauzer rasmni yuborishdan oldin ≤ 1600px JPEG ga siqadi. Server faqat JPEG/PNG/WebP qabul qiladi
@@ -53,7 +57,9 @@ Batafsil texnik shartnoma: [`SPEC.md`](./SPEC.md).
   barcha baza so'rovlari 500 qaytaradi. Yangi migratsiya `worker/migrations.js` ga ham qo'shiladi;
   `npm run test:storage` uni namuna ma'lumotli bazada sinaydi.
 - **Limitlar (bazadagi hisoblagichlar):**
-  - kirish: bitta telefon raqamiga 15 daqiqada 10 ta urinish (IP almashtirilsa ham);
+  - kirish: bitta telefon raqami yoki emailga 15 daqiqada 10 ta urinish (IP almashtirilsa ham);
+  - email kodlari: email+maqsad bo'yicha 60 soniyada bir marta, bitta emailga 5 ta / soat, bitta IP dan 20 ta / soat;
+    bitta kodga 5 ta urinish;
   - kirish va ro'yxatdan o'tish: bitta IP dan 15 daqiqada 30 ta urinish. IPv6 manzillar /64 tarmoq bo'yicha
     hisoblanadi. SPEC'da IP limiti 10 edi: mobil operatorlarning CGNAT tarmog'ida ko'p foydalanuvchi bitta
     IP ni bo'lishadi, parol tanlashdan asosiy himoya esa endi telefon bo'yicha limit;
@@ -72,21 +78,24 @@ hasharchilar/
 ├── package.json             # web + worker + capacitor (bitta paket)
 ├── wrangler.jsonc           # Worker hasharchilar-api: assets ./dist (ASSETS), D1 (DB), DO (HASHAR_DB), R2 (PHOTOS)
 ├── capacitor.config.json    # uz.hasharchilar.app, webDir dist
-├── migrations/              # 0001_init.sql, 0002_admin.sql, 0003_v3.sql (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
+├── migrations/              # 0001_init, 0002_admin, 0003_v3, 0004_email (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
 ├── schema.sql               # migratsiyalar birlashtirilgani (qulaylik uchun)
 ├── seed.sql                 # FAQAT lokal namuna ma'lumot (parol: demo1234)
 ├── worker/                  # Hono backend (+ admin.js, social.js — izoh/profil/reyting, geo.js — Nominatim proksi,
+│                            #   email.js — Resend + xat shabloni, otp.js — email kodlari,
 │                            #   do-db.js, d1-adapter.js, migrations.js, sql-split.js)
 ├── scripts/wrangler-config.mjs # wrangler.jsonc → wrangler.deploy.json (--storage d1|do)
 ├── scripts/site-url.sh      # CI: https://<worker>.<subdomen>.workers.dev manzili
 ├── tests/api.test.mjs       # API testi (node:test, wrangler dev ga qarshi; D1 va DO rejimida)
 ├── tests/admin.test.mjs     # admin panel API testi (server ADMIN_PHONES bilan); tests/helpers.mjs — umumiy
-├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config (fixtures/: seed-v2.sql)
+├── tests/email.test.mjs     # email ro'yxat / kirish / tiklash / tasdiqlash, "email majburiy" (server EMAIL_MOCK bilan)
+├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config (fixtures/: seed-v2/v3.sql)
 ├── src/                     # React (sayt va APK uchun bir xil)
 │   ├── lib/                 #   router (hash), store (kesh), theme, actions, api, auth, native, map, meta, utils
 │   ├── pages/               #   Home, Map, List, Hashar, Create, Results, Leaderboard, Profile, User, About,
 │   │                        #   Login, NotFound — har biri alohida sahifa (#/...)
-│   ├── components/          #   Header, TabBar, Footer, HasharCard, Comments, PhotoInput, ProfileParts, ui, icons
+│   ├── components/          #   Header, TabBar, Footer, HasharCard, Comments, PhotoInput, ProfileParts, ui, icons,
+│   │                        #   AuthForm, EmailOtp (6 katakli kod), EmailVerifyScreen ("Emailni tasdiqlang" + banner)
 │   │   └── map/             #   HasharMap (klaster), MiniMap, LocationPicker — lazy (MapLibre faqat kerak bo'lganda)
 │   └── admin/               #   admin panel (#admin / #/admin, alohida lazy bundle)
 ├── public/                  # favicon, ikonlar, og-image, demo/ (seed rasmlari)
@@ -108,10 +117,10 @@ Hash router (`src/lib/router.js`) — sayt va APK da bir xil, "orqaga" tugmasi b
 | `#/yaratish` | 4 qadamli e'lon: kategoriya kartalari → xaritada pin + manzil qidiruvi + avtomatik manzil (reverse geocode) → sana/vaqt, ko'ngillilar soni, narsalar → "Oldin" rasmi (kamera/galereya) va tekshirish; qoralama saqlanadi |
 | `#/natijalar` | Oldin/Keyin galereya |
 | `#/reyting` | Reyting: shu oy / umumiy, podium (top-3) |
-| `#/profil` | Profilim: avatar, bio, tuman, statistika, daraja, nishonlar, mening hasharlarim, sozlamalar (mavzu, parolni o'zgartirish, admin, chiqish) |
+| `#/profil` | Profilim: avatar, bio, tuman, statistika, daraja, nishonlar, mening hasharlarim, sozlamalar (email — qo'shish/tasdiqlash/o'zgartirish, mavzu, parolni o'zgartirish, admin, chiqish) |
 | `#/u/:id` | Ommaviy profil (telefon ko'rsatilmaydi) |
 | `#/haqida` | Loyiha haqida + FAQ |
-| `#/kirish` | Kirish / ro'yxatdan o'tish (amallar uchun modal ham bor) |
+| `#/kirish` | Kirish (telefon yoki email) / ro'yxatdan o'tish (email kodi bilan) / parolni tiklash (amallar uchun modal ham bor) |
 | `#admin`, `#/admin` | Admin panel |
 
 - **Dizayn:** emerald asosiy rang, amber faqat asosiy CTA va "kutilmoqda" pinlari uchun; semantik rang tokenlari
@@ -137,6 +146,8 @@ Ekran rasmlari (`docs/screenshots/`, lokal `wrangler dev` + Playwright E2E dan):
 | ![Joy tanlash](docs/screenshots/v3-mobile-create-location.jpg) | ![Oldin/Keyin](docs/screenshots/v3-mobile-hashar-dark.jpg) | ![Hashar (tungi)](docs/screenshots/v3-desktop-hashar-dark.jpg) |
 | ![Profil](docs/screenshots/v3-mobile-profile.jpg) | ![Reyting](docs/screenshots/v3-mobile-leaderboard.jpg) | ![Yaratish](docs/screenshots/v3-desktop-create.jpg) |
 | ![Natijalar](docs/screenshots/v3-mobile-results.jpg) | ![Sozlamalar](docs/screenshots/v3-mobile-settings.jpg) | ![Hasharlar](docs/screenshots/v3-desktop-list.jpg) ![Admin](docs/screenshots/v3-desktop-admin.jpg) |
+| ![Ro'yxat: email kodi](docs/screenshots/v3-email-register-code.jpg) | ![Emailni tasdiqlang](docs/screenshots/v3-email-verify-screen-dark.jpg) | ![Parolni tiklash (tungi)](docs/screenshots/v3-email-forgot-dark.jpg) |
+| ![Sozlamalar: email](docs/screenshots/v3-email-profile-dark.jpg) | | |
 
 ## Lokal ishga tushirish
 
@@ -148,13 +159,18 @@ npm run db:local     # lokal D1: migratsiya + namuna ma'lumot (.wrangler/state i
 npm run dev          # sayt: http://localhost:5173  (Vite, /api → wrangler dev :8787 ga proxy)
 ```
 
-Namuna foydalanuvchilar uchun parol `demo1234`:
+Namuna foydalanuvchilar uchun parol `demo1234` (emaillar soxta, tasdiqlangan — telefon yoki email bilan kirish mumkin):
 
-| Ism | Telefon |
-|---|---|
-| Aziz Karimov | +998 90 111 22 33 |
-| Malika Yusupova | +998 93 555 66 77 |
-| Jasur Toshmatov | +998 97 777 88 99 |
+| Ism | Telefon | Email |
+|---|---|---|
+| Aziz Karimov | +998 90 111 22 33 | aziz@example.com |
+| Malika Yusupova | +998 93 555 66 77 | malika@example.com |
+| Jasur Toshmatov | +998 97 777 88 99 | jasur@example.com |
+
+`npm run dev:api` (va `dev:api:mock`, `dev:api:do`) **`EMAIL_MOCK=1`** bilan ishlaydi: xat yuborilmaydi, kod
+API javobida `dev_code` bo'lib qaytadi va brauzer konsolida `[EMAIL_MOCK] ... kodi: 123456` deb chiqadi.
+Haqiqiy xat bilan sinash: `.dev.vars` ga `RESEND_API_KEY=re_...` (va ixtiyoriy `RESEND_FROM=...`) yozib,
+`npx wrangler dev --port 8787` ni `EMAIL_MOCK` siz ishga tushiring (`.dev.vars` `.gitignore` da).
 
 Production rejimiga yaqinroq sinash uchun sayt va API ni bitta originda ham ishga tushirish mumkin:
 
@@ -180,19 +196,28 @@ boshlanadi, migratsiyalar birinchi so'rovda avtomatik qo'llanadi.
 ### Testlar
 
 ```bash
-npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 &   # boshqa terminalda
-npm run test:api                   # tests/api.test.mjs + tests/admin.test.mjs (BASE_URL bilan boshqa manzil)
+npm run build && npm run db:local  # dist/ (assets) va lokal D1
+npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 &   # boshqa terminalda
+npm run test:api                   # tests/api.test.mjs + admin.test.mjs + email.test.mjs (BASE_URL bilan boshqa manzil)
 
 # Durable Object rejimi (alohida port va saqlash papkasi):
 node scripts/wrangler-config.mjs --storage do
 npx wrangler dev --config wrangler.deploy.json --port 8788 --persist-to .wrangler/state-do-test \
-  --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 &
+  --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 &
 STORAGE=do BASE_URL=http://localhost:8788 npm run test:api
 
 npm run test:storage               # server kerak emas: DO adapteri = D1, migratsiyalar, wrangler-config
 ```
 
-- Test bo'sh bo'lmagan bazada ham qayta ishlaydi, chunki har safar tasodifiy telefon raqamlari va IP manzillar ishlatiladi.
+- Test bo'sh bo'lmagan bazada ham qayta ishlaydi, chunki har safar tasodifiy telefon raqamlari, emaillar va IP manzillar ishlatiladi.
+- **`EMAIL_MOCK:1` majburiy:** testdagi foydalanuvchilar email kodi bilan ro'yxatdan o'tadi (`tests/helpers.mjs` →
+  `register()` kodni javobdagi `dev_code` dan oladi). Faqat `EMAIL_MOCK=1` serverda ishlaydigan test
+  sarlavhalari: `x-test-otp-ttl` (kod muddati, soniya), `x-test-otp-cooldown` (qayta yuborish oralig'i) va
+  `x-test-legacy-register: 1` (eski `POST /api/auth/register` bilan emailsiz "eski" hisob — email majburiy
+  qoidasini sinash uchun). Production'da `EMAIL_MOCK` hech qachon o'rnatilmaydi, bu sarlavhalar e'tiborsiz qoladi.
+- `tests/email.test.mjs` oxirida email xizmati **o'chiq** holatni (`EMAIL_MOCK` ham, `RESEND_API_KEY` ham yo'q)
+  sinash uchun o'zi vaqtinchalik papkada uchinchi `wrangler dev` (DO rejimi) ochadi — eski ro'yxat ishlaydi,
+  email marshrutlari 503, yozuvchi amallar cheklanmaydi. Tayyor serverni berish: `NOEMAIL_URL=http://...`.
 - Admin testlari (`tests/admin.test.mjs`) server **`ADMIN_PHONES`** bilan ishga tushgan bo'lishini talab qiladi:
   `+998900000099` — soxta test raqami (boshqasi uchun `ADMIN_PHONE=+998... npm run test:api`). Bu raqam bilan
   hisob bo'lmasa ro'yxatdan o'tiladi, bo'lsa kiriladi (parol `admin-test-123`). `npm run dev:api` ham shu raqamni beradi.
@@ -209,8 +234,9 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
   tashqi kalit / `ON DELETE CASCADE` ni va qayta ishga tushganda migratsiyalar takrorlanmasligini tekshiradi.
   Yangilanish testi: `0001` dan keyin `seed.sql` (+ sessiya va limit qatorlari) yoziladi, so'ng qolgan
   migratsiyalar birma-bir qo'llanadi — har biri ma'lumotli bazada o'tishi shart. `seed.sql` eng yangi sxemaga
-  yozilgani uchun `tests/fixtures/seed-v2.sql` (0003 dan oldingi namuna) ham ishlatiladi: `0002` va `0003_v3`
-  albatta to'la jadvallarda sinaladi (yangi ustunlarning DEFAULT qiymatlari ham tekshiriladi).
+  yozilgani uchun `tests/fixtures/seed-v2.sql` (0003 dan oldingi) va `seed-v3.sql` (0004 dan oldingi namuna)
+  ham ishlatiladi: `0002`, `0003_v3` va `0004_email` albatta to'la jadvallarda sinaladi (yangi ustunlarning
+  DEFAULT qiymatlari, emaillarni normallashtirish/takrorlarni tozalash va UNIQUE indeks ham tekshiriladi).
 
 ## Android ilova (APK) ni lokal qurish
 
@@ -275,8 +301,9 @@ Hech qanday qo'lda qadam kerak emas: push qilinsa sayt va APK yangilanadi.
 Ketma-ketlik:
 
 1. **test** — `npm ci` → `npm run build` → `npm run test:storage` → `npm run db:local` →
-   ikkita `wrangler dev` (to'liq lokal, tokensiz): D1 rejimi (:8787) va Durable Object rejimi (:8788,
-   `wrangler.deploy.json --storage do`, alohida `--persist-to`) → `npm run test:api` ikkala rejimda.
+   ikkita `wrangler dev` (to'liq lokal, tokensiz, `GEO_MOCK:1` va `EMAIL_MOCK:1`): D1 rejimi (:8787) va Durable
+   Object rejimi (:8788, `wrangler.deploy.json --storage do`, alohida `--persist-to`) → `npm run test:api` ikkala
+   rejimda (`tests/email.test.mjs` email o'chiq holat uchun o'zi uchinchi, vaqtinchalik `wrangler dev` ochadi).
 2. **apk** (test o'tsa):
    - ilova API manzili: `https://<wrangler.jsonc name>.<subdomen>.workers.dev`; subdomen
      `GET /accounts/{id}/workers/subdomain` dan olinadi (bo'lmasa ogohlantirish bilan `davlatsudekspert`);
@@ -301,6 +328,8 @@ Ketma-ketlik:
      bucket mavjud bo'lsa — davom etadi);
    - D1 rejimida: eski (migratsiyasiz) jadvallar tekshiriladi, keyin `wrangler d1 migrations apply --remote`;
    - `wrangler deploy --config wrangler.deploy.json` (custom domen faqat xavfsiz bo'lsa — pastga qarang);
+   - **email:** `RESEND_API` secret bo'lsa — Worker secret'lari `RESEND_API_KEY` va `RESEND_FROM` yoziladi
+     (pastda: [Email (Resend)](#email-resend)); bo'sh bo'lsa — o'tkazib yuboriladi;
    - `/api/health` kutiladi;
    - **baza tekshiruvi:** `/api/stats` va `/api/hashars?status=COMPLETED` to'g'ri JSON qaytarishi kerak
      (`/api/health` bazaga tegmaydi). DO rejimida obyekt va migratsiyalar shu so'rovda ishga tushadi —
@@ -354,6 +383,7 @@ olib tashlash alohida migratsiya talab qiladi.
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | ha | Hisob `31c4b3d8ece4b65de515debc4552334a`. Kerakli ruxsatlar: **Account → Workers Scripts: Edit, Workers R2 Storage: Read** (bucket yo'q bo'lsa Edit), **Account Settings: Read**. Ixtiyoriy: **D1: Edit** (birinchi deploy'dan oldin bo'lsa D1 tanlanadi), custom domen uchun **Zone → Workers Routes: Edit, DNS: Read**. Token faqat wrangler / Cloudflare API qadamlariga beriladi: `npm ci`, build va Gradle uni ko'rmaydi |
 | `HASHARCHILAR_ADMIN_PHONES` | yo'q | admin panel egalari, vergul bilan (`+998901234567,+998...`); deploy'da Worker secret `ADMIN_PHONES` ga yoziladi (README → Admin panel) |
+| `RESEND_API` | yo'q (email uchun kerak) | Resend API kaliti (`re_...`); deploy'da Worker secret `RESEND_API_KEY` ga, jo'natuvchi — `RESEND_FROM` ga yoziladi ([Email (Resend)](#email-resend)). Bo'lmasa email o'chiq: eski telefon+parol ro'yxati ishlaydi |
 | `HASHARCHILAR_KEYSTORE_BASE64` | yo'q (tavsiya etiladi) | `base64 -w0 release.jks` natijasi |
 | `HASHARCHILAR_KEYSTORE_PASSWORD` | yo'q | keystore paroli (kalit paroli ham shu bo'lishi kerak) |
 | `HASHARCHILAR_KEY_ALIAS` | yo'q | kalit aliasi |
@@ -380,6 +410,28 @@ Barqaror yechim — bir marta kalit yaratib, uni `HASHARCHILAR_KEYSTORE_*` secre
 kalitiga birinchi marta o'tish), workflow'ni qo'lda (**Run workflow**) `allow_key_change = true` bilan ishga
 tushiring — aks holda o'z kaliti farq qilgani uchun apk job xato beradi. Bunda foydalanuvchilar ilovani o'chirib,
 qayta o'rnatishi kerak bo'ladi.
+
+### Email (Resend)
+
+Email kodlari [Resend](https://resend.com) orqali yuboriladi (`POST https://api.resend.com/emails`).
+
+1. GitHub → **Settings → Secrets and variables → Actions → New repository secret**: nomi `RESEND_API`,
+   qiymati — Resend API kaliti.
+2. Keyingi deploy'da "Email" qadami:
+   - kalit niqoblanadi va hech qayerda chiqarilmaydi (curl va wrangler'ga stdin orqali beriladi);
+   - jo'natuvchi domeni `GET https://api.resend.com/domains` dan aniqlanadi: holati `verified` va nomida
+     `hasharchilar` bo'lgan domen, bo'lmasa birinchi `verified` domen. Kalit cheklangan bo'lsa (faqat
+     "Sending access" — domenlarni o'qib bo'lmaydi) yoki tasdiqlangan domen yo'q bo'lsa — `nfcstore.uz`
+     (egasining Resend'da allaqachon tasdiqlangan domeni);
+   - Worker secret'lari yoziladi: `RESEND_API_KEY` va `RESEND_FROM` = `Hasharchilar <no-reply@<domen>>`.
+3. Natija: `GET /api/config` → `{"email_enabled": true}`, sayt va APK ro'yxatni email kodi bilan qiladi.
+
+Keyinchalik `hasharchilar.uz` domenini Resend'da tasdiqlasangiz (Resend → Domains → Add, DNS yozuvlari),
+keyingi deploy jo'natuvchini avtomatik `no-reply@hasharchilar.uz` ga almashtiradi.
+CI'siz qo'lda: `printf '%s' 're_...' | npx wrangler secret put RESEND_API_KEY --name hasharchilar-api` va
+`printf '%s' 'Hasharchilar <no-reply@nfcstore.uz>' | npx wrangler secret put RESEND_FROM --name hasharchilar-api`.
+Xat yuborilmasa foydalanuvchi 502 `"Email yuborilmadi, birozdan keyin qayta urinib ko'ring"` ko'radi, Worker
+logida faqat Resend javob statusi yoziladi (kalit, manzil va xat matni yozilmaydi).
 
 ### Admin panel
 
@@ -438,15 +490,53 @@ npm run deploy                                        # vite build + wrangler de
 Qaysi rejimda ekanini Worker sozlamalaridan tekshiring (Dashboard → `hasharchilar-api` → Bindings) va
 production'ni boshqa rejimga **tasodifan** o'tkazmang: ma'lumotlar eski bazada qoladi.
 
+## Email bilan ro'yxat va tasdiqlash
+
+Email xizmati **yoqilgan** bo'lsa (`RESEND_API_KEY` bor yoki lokal/test `EMAIL_MOCK=1`) — `GET /api/config` →
+`{"email_enabled": true}`:
+
+- **Ro'yxat faqat email kodi bilan:** `POST /api/auth/register/start` (ism, email, telefon, parol) → emailga
+  6 xonali kod → `POST /api/auth/register/verify` → hisob (email tasdiqlangan) va sessiya. Eski
+  `POST /api/auth/register` (eski APK'lar) — 410 `{"error": "Ilovani yangilang: ro'yxatdan o'tish endi email orqali", "code": "email_required"}`.
+- **Email majburiy:** emaili tasdiqlanmagan foydalanuvchi (email joriy qilinishidan oldingi hisoblar, admin ham)
+  kira oladi, hamma narsani ko'radi, profilini tahrirlaydi va email qo'sha oladi. Lekin hashar yaratish,
+  qo'shilish, chiqish, yakunlash, o'z hasharini o'chirish va izoh yozish — 403
+  `{"error": "Avval emailingizni tasdiqlang", "code": "email_unverified"}` (`requireVerifiedEmail`).
+  Admin moderatsiyasi (`/api/admin/*`) bunga kirmaydi.
+- **Sayt/APK:** bunday foydalanuvchi kirganda to'liq ekranli "Emailni tasdiqlang" bosqichi (email → kod) chiqadi;
+  "Keyinroq" bosilsa ko'rish sahifalarida yopsa bo'ladigan eslatma (banner) turadi, yozuvchi amalga urinish
+  yoki API'dan kelgan istalgan 403 `email_unverified` shu bosqichni qayta ochadi. Profil → Sozlamalar → "Email"
+  kartasi: email va "Tasdiqlangan" belgisi yoki "Email qo'shish".
+- **Kirish:** `{login, password}` — `login` telefon yoki email (katta-kichik harf farqi yo'q); eski `{phone, password}` ham ishlaydi.
+- **Parolni tiklash:** `POST /api/auth/forgot` doim 200 qaytaradi (hisob borligi aytilmaydi; kod faqat shu email
+  tasdiqlangan hisob bo'lsa yuboriladi), `POST /api/auth/reset` — yangi parol, barcha eski sessiyalar o'chadi.
+- **Kod qoidalari:** 6 raqam (`crypto.getRandomValues`, teng taqsimot), bazada faqat `sha256(purpose|email|code)`,
+  10 daqiqa amal qiladi, 5 ta noto'g'ri urinishdan keyin o'ladi, bir marta ishlatiladi, yangi kod eskisini bekor
+  qiladi, solishtirish doimiy vaqtda. Qayta yuborish — email+maqsad bo'yicha 60 soniyada bir marta (429 +
+  `Retry-After`), bitta emailga 5 ta / soat, bitta IP dan 20 ta / soat.
+- Email faqat foydalanuvchining o'ziga (`/api/me`, kirish/ro'yxat/profil javoblari) va admin ro'yxatida
+  qaytariladi; ommaviy javoblarda (profil, reyting, izohlar, hashar, ko'ngillilar) hech qachon.
+
+Email xizmati **o'chiq** bo'lsa (kalit yo'q, `EMAIL_MOCK` emas) sayt qulflanib qolmaydi: eski telefon+parol
+ro'yxati ishlaydi, email marshrutlari 503 `"Email xizmati sozlanmagan"`, yozuvchi amallar cheklanmaydi.
+
 ## API (qisqacha)
 
-Barcha javoblar JSON formatida. Xato javobi `{ "error": "<o'zbekcha matn>" }` ko'rinishida, mos HTTP status bilan qaytadi.
+Barcha javoblar JSON formatida. Xato javobi `{ "error": "<o'zbekcha matn>" }` ko'rinishida, mos HTTP status bilan qaytadi
+(ba'zilarida mashina o'qiydigan `code` ham bor: `email_required`, `email_unverified`).
 To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 
 | Metod | Yo'l | Auth | Tavsif |
 |---|---|---|---|
-| POST | `/api/auth/register` | – | `{name, phone, password}` → 201 `{token, user}`. Telefon band bo'lsa 409 |
-| POST | `/api/auth/login` | – | `{phone, password}` → `{token, user}`. Noto'g'ri bo'lsa 401 |
+| GET | `/api/config` | – | `{email_enabled}` |
+| POST | `/api/auth/register/start` | – | `{name, phone, email, password}` → `{ok, email, expires_in: 600, resend_in: 60}` (+ `dev_code` faqat `EMAIL_MOCK=1`). Telefon/email band — 409, 60 s ichida qayta — 429, email o'chiq — 503 |
+| POST | `/api/auth/register/verify` | – | `{email, code}` → 201 `{token, user}`. Noto'g'ri kod — 400 `"Kod noto'g'ri"`, eskirgan/o'lgan — 400 `"Kod eskirgan, yangisini so'rang"`, band — 409 |
+| POST | `/api/auth/register` | – | eski: `{name, phone, password}` → 201. Email yoqilgan bo'lsa — 410 `email_required` |
+| POST | `/api/auth/login` | – | `{login, password}` (telefon yoki email) yoki eski `{phone, password}` → `{token, user}`. Noto'g'ri bo'lsa 401 |
+| POST | `/api/auth/forgot` | – | `{email}` → doim 200 `{ok, email, expires_in, resend_in}` |
+| POST | `/api/auth/reset` | – | `{email, code, new_password}` → `{token, user}`; barcha eski sessiyalar o'chadi |
+| POST | `/api/me/email/start` | ✓ | `{email}` → `{ok, email, expires_in, resend_in}`; boshqa hisobda bo'lsa 409 |
+| POST | `/api/me/email/verify` | ✓ | `{code}` → `{user}` (email va `email_verified: true`) |
 | POST | `/api/auth/logout` | ✓ | sessiyani o'chiradi |
 | GET | `/api/me` | ✓ | `{user, stats: {created, joined, completed}}` |
 | POST | `/api/me/password` | ✓ | `{current_password, new_password}` → `{ok:true}`; joriy parol noto'g'ri — 401 `"Joriy parol noto'g'ri"` (limit kirish bilan umumiy); boshqa sessiyalar o'chadi |
@@ -469,14 +559,16 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | GET | `/api/app`, `/api/app/download` | – | APK mavjudligi va versiyasi; faylni yuklab olish (statik `dist/app/`, zaxira — R2) |
 | GET | `/api/health` | – | `{ok:true}` |
 | GET | `/api/admin/overview` | ✓ admin | umumiy raqamlar + `recent_hashars`, `recent_users` (5 tadan) |
-| GET | `/api/admin/users` | ✓ admin | `?q=&offset=&limit=` (≤ 100) → `{items, total}` |
+| GET | `/api/admin/users` | ✓ admin | `?q=&offset=&limit=` (≤ 100; ism, telefon yoki email) → `{items, total}` (`email`, `email_verified` bilan) |
 | POST | `/api/admin/users/:id/block`, `/unblock`, `/role` | ✓ admin | bloklash (sessiyalar o'chadi) / blokdan chiqarish / `{role: 'user'\|'admin'}` |
-| DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, qatnashuvlari, izohlari, hasharlari, ularning rasmlari va avatari |
+| DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, email kodlari, qatnashuvlari, izohlari, hasharlari, ularning rasmlari va avatari |
 | GET | `/api/admin/hashars` | ✓ admin | `?status=&q=&offset=&limit=` → `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari va izohlari bilan) |
 | DELETE | `/api/admin/comments/:id` | ✓ admin | istalgan izohni o'chirish |
 
-`user` obyektida (`/api/me`, kirish, ro'yxat, profil) `is_admin`, `bio`, `district`, `avatar_url` maydonlari bor.
+`user` obyektida (`/api/me`, kirish, ro'yxat, profil) `is_admin`, `bio`, `district`, `avatar_url`, `email`, `email_verified` maydonlari bor.
+✓ belgili yozuvchi amallar (hashar yaratish, qo'shilish/chiqish, yakunlash, o'chirish, izoh) email yoqilgan bo'lsa
+tasdiqlangan emailni ham talab qiladi (403 `email_unverified`).
 `HasharDTO` da (v3): `category`, `max_volunteers`, `comment_count`, `creator.avatar_url`; tafsilotdagi `volunteers[]` da `avatar_url`.
 
 **Geo proksi** (`worker/geo.js`): mijoz Nominatim'ga to'g'ridan-to'g'ri murojaat qilmaydi. Worker
@@ -490,8 +582,9 @@ CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor:/
 
 ## Ma'lum cheklovlar
 
-- **Telefon tasdiqlanmaydi.** SMS (OTP) yo'q, unutilgan parolni tiklash funksiyasi ham yo'q (kirgan foydalanuvchi
-  parolini `POST /api/me/password` bilan almashtira oladi).
+- **Telefon tasdiqlanmaydi** (SMS yo'q) — tasdiqlanadigan va parolni tiklashda ishlatiladigan kanal — email.
+  Email xizmati o'chiq bo'lsa (`RESEND_API` secret yo'q) parolni tiklab bo'lmaydi (kirgan foydalanuvchi parolini
+  `POST /api/me/password` bilan almashtira oladi).
 - **Xarita** OpenFreeMap vektor plitkalaridan keladi (kalitsiz, limitsiz). Uslub manzillari `src/lib/map.js`
   (`STYLE_LIGHT`, `STYLE_DARK`) da; boshqa xizmatga o'tish uchun faqat shu ikki URL almashtiriladi. MapLibre WebGL2
   talab qiladi (Android System WebView 2021+); WebGL bo'lmagan juda eski qurilmalarda xarita o'rniga bo'sh fon chiqadi,
