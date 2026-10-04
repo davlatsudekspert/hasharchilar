@@ -3,6 +3,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { adminRoutes } from './admin.js';
+import { bootstrapRoutes } from './bootstrap.js';
 import { authRoutes, optionalAuth } from './auth.js';
 import { DoDatabase } from './d1-adapter.js';
 import { HasharDB } from './do-db.js';
@@ -73,6 +74,7 @@ app.route('/api', authRoutes); // /api/auth/*, /api/me
 app.route('/api/hashars', hasharRoutes);
 app.route('/api', mediaRoutes); // /api/media/*, /api/app, /api/app/download
 app.route('/api/admin', adminRoutes); // admin panel (faqat administratorlar)
+app.route('/api', bootstrapRoutes); // /api/bootstrap-admin — birinchi admin (bir martalik)
 
 // ---------- Xatolar ----------
 
