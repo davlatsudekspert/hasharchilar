@@ -208,30 +208,61 @@ jobs:
       - name: Capacitor sync
         run: npx cap sync android
 
-      # Debug kaliti (secret yo'q bo'lsa) har runner'da yangidan yaratiladi va eski APK ustiga
-      # o'rnatilmay qoladi. Kesh kalitni run'lar orasida saqlaydi, lekin u branch'ga bog'liq va 7 kun
-      # ishlatilmasa o'chadi — shuning uchun pastda "Imzo mosligi" qadami saytdagi APK bilan solishtiradi.
-      # Saqlash (cache/save) alohida: faqat yangi APK chiqarilishi tasdiqlangandan keyin.
-      - name: Debug kalit keshi (tiklash)
-        id: dkcache
-        uses: actions/cache/restore@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: hasharchilar-debug-keystore-v1
-
       # TEKSHIRUV SKRIPT ICHIDA: `secrets` kontekstini qadam `if:` ida ishlatib bo'lmaydi.
       # Faqat hasharchilar'ning O'Z secretlari (ANDROID_KEYSTORE_* — nfcstore kaliti, ishlatilmaydi).
+      # Kalit manbai: 1) HASHARCHILAR_KEYSTORE_* secretlari; 2) aks holda R2 ning YOPIQ qismidagi doimiy
+      # CI kaliti ${R2_BUCKET}/ci/android-signing.p12 (birinchi run yaratadi, keyingilari oladi — APK
+      # yangilanishlari eski ilova ustiga o'rnatiladi). Bucket ommaviy emas, Worker faqat before/ after/
+      # avatars/ ni beradi; himoya — R2 ga kirish (Cloudflare token).
       - name: Imzo kaliti
         id: key
         env:
           KEYSTORE: ${{ secrets.HASHARCHILAR_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.HASHARCHILAR_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.HASHARCHILAR_KEY_ALIAS }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: |
           set -euo pipefail
           if [ -z "$KEYSTORE" ]; then
-            echo "release=0" >> "$GITHUB_OUTPUT"
-            echo "Imzo kaliti sozlanmagan — debug kaliti ishlatiladi."
+            KS=android/app/ci-signing.p12
+            OBJ_KEY="ci/android-signing.p12"
+            CI_ALIAS=hasharchilar
+            CI_PW=hasharchilar-ci-signing
+            URL="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/r2/buckets/${R2_BUCKET}/objects/${OBJ_KEY}"
+            CODE=$(curl -sS --max-time 60 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o "$KS" -w '%{http_code}' "$URL") || CODE="000"
+            if [ "$CODE" = "200" ]; then
+              echo "Doimiy CI imzo kaliti R2 dan olindi."
+            elif [ "$CODE" = "404" ]; then
+              echo "R2 da CI imzo kaliti yo'q — bir marta yaratilmoqda."
+              rm -f "$KS"
+              keytool -genkeypair -noprompt -storetype PKCS12 -keystore "$KS" -alias "$CI_ALIAS" \
+                -keyalg RSA -keysize 4096 -validity 10950 -storepass "$CI_PW" -keypass "$CI_PW" \
+                -dname "CN=Hasharchilar, O=hasharchilar.uz, C=UZ"
+              npx wrangler r2 object put "${R2_BUCKET}/${OBJ_KEY}" --file "$KS" --remote --content-type application/x-pkcs12
+              CHECK="$RUNNER_TEMP/check.p12"
+              CODE2=$(curl -sS --max-time 60 -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" -o "$CHECK" -w '%{http_code}' "$URL") || CODE2="000"
+              if [ "$CODE2" != "200" ] || ! cmp -s "$KS" "$CHECK"; then
+                echo "::error::CI imzo kaliti R2 ga saqlanmadi (HTTP ${CODE2})"; exit 1
+              fi
+              echo "CI imzo kaliti R2 ga saqlandi."
+            else
+              echo "::error::R2 dan CI imzo kalitini olib bo'lmadi (HTTP ${CODE})."; exit 1
+            fi
+            export HK_PW="$CI_PW"
+            if ! keytool -list -v -keystore "$KS" -storepass:env HK_PW -alias "$CI_ALIAS" > "$RUNNER_TEMP/keytool.txt" 2>&1; then
+              grep -m3 -E 'keytool error|Exception' "$RUNNER_TEMP/keytool.txt" || true
+              echo "::error::R2 dagi CI keystore ochilmadi."; exit 1
+            fi
+            FP=$(grep -m1 -E '^[[:space:]]*SHA256:' "$RUNNER_TEMP/keytool.txt" | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f')
+            if [ "$FP" = "$NFCSTORE_CERT_SHA256" ]; then echo "::error::nfcstore kaliti — ishlatilmaydi."; exit 1; fi
+            {
+              echo "storeFile=ci-signing.p12"
+              echo "storePassword=$CI_PW"
+              echo "keyAlias=$CI_ALIAS"
+              echo "keyPassword=$CI_PW"
+            } > android/key.properties
+            echo "release=1" >> "$GITHUB_OUTPUT"
+            echo "Doimiy CI kaliti bilan imzolanadi (sertifikat SHA-256: $FP)."
             exit 0
           fi
           # Qo'lda joylangan secretdagi ko'rinmas belgilar (CR/LF, chetdagi bo'shliq) olib tashlanadi
@@ -369,15 +400,6 @@ jobs:
           fi
           echo "✓ Imzo saytdagi APK bilan bir xil ($FP, $(jq -r '.version' "$PREV"))"
           publish true
-
-      # Debug kalit faqat yangi APK chiqarilishi tasdiqlangach saqlanadi (keyingi qadamlar yiqilsa ham
-      # yo'qolmaydi). Saytdagidan farq qiladigan kalit keshlanmaydi.
-      - name: Debug kalit keshi (saqlash)
-        if: steps.key.outputs.release == '0' && steps.sig.outputs.publish == 'true' && steps.dkcache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: hasharchilar-debug-keystore-v1
 
       - uses: actions/upload-artifact@v4
         with:
