@@ -22,6 +22,8 @@
 #   Workers R2 Storage: Read (bucket yo'q bo'lsa Edit), Account Settings: Read.
 #   Ixtiyoriy: D1: Edit (bo'lsa birinchi deploy D1 ni tanlaydi), Zone → Workers Routes: Edit + DNS: Read (custom domen).
 #   Token faqat Cloudflare'ga murojaat qiladigan qadamlarga beriladi (npm ci / build / Gradle uni ko'rmaydi).
+# IXTIYORIY: HASHARCHILAR_ADMIN_PHONES — admin panel egalari (vergul bilan: +998901234567,+998...);
+#   deploy'da Worker secret ADMIN_PHONES ga yoziladi. Bo'sh bo'lsa o'tkazib yuboriladi.
 # IXTIYORIY: HASHARCHILAR_KEYSTORE_BASE64 / HASHARCHILAR_KEYSTORE_PASSWORD / HASHARCHILAR_KEY_ALIAS
 #   (bo'lmasa APK keshlangan debug kaliti bilan imzolanadi — o'rnatiladi, lekin Play Store'ga yaramaydi).
 #   ANDROID_KEYSTORE_* nomlari ATAYLAB ishlatilmaydi: bu repoda ular nfcstore ilovasining
@@ -93,14 +95,17 @@ jobs:
       - name: Lokal D1 — migratsiyalar + namuna ma'lumot
         run: npm run db:local
 
+      # ADMIN_PHONES — soxta test raqami (tests/admin.test.mjs shu raqam bilan admin bo'lib kiradi)
       - name: wrangler dev — D1 (:8787) va Durable Object (:8788) rejimlari
+        env:
+          TEST_ADMIN_PHONES: '+998900000099'
         run: |
           set -euo pipefail
           node scripts/wrangler-config.mjs --storage "do"
           nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --inspector-port 9229 \
-            > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
+            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
           nohup npx wrangler dev --config wrangler.deploy.json --port 8788 --ip 127.0.0.1 --inspector-port 9230 \
-            --persist-to "$RUNNER_TEMP/do-state" > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
+            --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
           for port in 8787 8788; do
             ready=""
             for i in $(seq 1 60); do
@@ -747,6 +752,29 @@ jobs:
             npx wrangler deploy --config wrangler.deploy.json 2>&1 | tee "$RUNNER_TEMP/deploy.log"
           fi
           echo "domain=${ATTACHED}" >> "$GITHUB_OUTPUT"
+
+      # Admin panel: HASHARCHILAR_ADMIN_PHONES (vergul bilan, +998...) → Worker secret ADMIN_PHONES.
+      # Secret bo'sh bo'lsa o'tkazib yuboriladi (Worker'dagi mavjud qiymat o'zgarmaydi). Raqamlar repoga yozilmaydi.
+      # Deploy'dan KEYIN: `secret put` yangi deploy qilingan versiyaga qo'llanadi (secretlar keyingi deploy'larda saqlanadi).
+      - name: Admin telefonlari (Worker secret ADMIN_PHONES)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ADMIN_PHONES: ${{ secrets.HASHARCHILAR_ADMIN_PHONES }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ADMIN_PHONES//[[:space:],;]/}" ]; then
+            echo "::notice title=Admin panel::HASHARCHILAR_ADMIN_PHONES secret bo'sh — ADMIN_PHONES o'zgartirilmadi (README → Admin panel)."
+            exit 0
+          fi
+          # Har bir raqam alohida niqoblanadi (loglarda ko'rinmasin)
+          while IFS= read -r p; do
+            t="${p#"${p%%[![:space:]]*}"}"; t="${t%"${t##*[![:space:]]}"}" # chetdagi bo'shliqlarsiz
+            c="${p//[[:space:]]/}"                                          # bo'shliqlarsiz
+            if [ -n "$c" ]; then echo "::add-mask::$t"; echo "::add-mask::$c"; fi
+          done < <(printf '%s\n' "$ADMIN_PHONES" | tr ',;' '\n')
+          printf '%s' "$ADMIN_PHONES" | npx wrangler secret put ADMIN_PHONES --name "$WORKER_NAME" > "$RUNNER_TEMP/secret.log" 2>&1 \
+            || { echo "::error::ADMIN_PHONES secret'ini o'rnatib bo'lmadi"; grep -v '+998' "$RUNNER_TEMP/secret.log" || true; exit 1; }
+          echo "✓ ADMIN_PHONES Worker secret'i yangilandi ($(printf '%s' "$ADMIN_PHONES" | tr ',;' '\n' | grep -c '[0-9]') ta raqam)"
 
       # Yangi workers.dev manzili (SSL) tarqalishi bir necha daqiqa olishi mumkin.
       - name: /api/health

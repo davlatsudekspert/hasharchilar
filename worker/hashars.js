@@ -29,7 +29,7 @@ const tashkentNow = (offsetMs = 0) => new Date(Date.now() + 5 * 3600e3 + offsetM
  * HasharDTO uchun umumiy SELECT. Birinchi parametr (?) — joriy foydalanuvchi ID si
  * (mehmon uchun NULL → joined doim 0). creator_phone DTO ga faqat ruxsat bo'lsa qo'shiladi.
  */
-const HASHAR_SELECT = `
+export const HASHAR_SELECT = `
   SELECT h.id, h.title, h.description, h.address, h.lat, h.lng, h.date_time, h.items, h.status,
          h.creator_id, u.name AS creator_name, u.phone AS creator_phone, h.created_at, h.completed_at,
          (SELECT COUNT(*) FROM volunteers v WHERE v.hashar_id = h.id) AS volunteer_count,
@@ -50,7 +50,7 @@ function parseJsonArray(s) {
 }
 
 /** DB qatori → HasharDTO (SPEC 5-bo'lim). */
-function toDto(r, userId) {
+export function toDto(r, userId) {
   return {
     id: r.id,
     title: r.title,

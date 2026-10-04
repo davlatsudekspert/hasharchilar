@@ -1,4 +1,4 @@
--- hasharchilar.uz — Cloudflare D1 sxemasi (0001_init)
+-- hasharchilar.uz — Cloudflare D1 sxemasi: migrations/*.sql birlashtirilgani (0001_init + 0002_admin)
 -- Qo'llash: npx wrangler d1 migrations apply hasharchilar --local | --remote
 -- Eslatma: D1 tashqi kalitlarni (FOREIGN KEY) standart holatda tekshiradi;
 -- LIKE/GLOB shablonlari 50 baytdan oshmasligi kerak (D1 limiti).
@@ -71,3 +71,13 @@ CREATE TABLE rate_limits (
   window_start INTEGER NOT NULL,                       -- unix soniya (oyna boshi)
   count        INTEGER NOT NULL
 );
+
+-- hasharchilar.uz — admin panel (0002_admin)
+-- DIQQAT: DO rejimida production ma'lumotlari ustida qo'llanadi — yangi ustunlar mavjud qatorlarda
+-- ham ishlashi shart (NOT NULL → DEFAULT bilan).
+
+-- Rol: oddiy foydalanuvchi yoki administrator (ADMIN_PHONES secret'idagi raqamlar ham admin hisoblanadi)
+ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin'));
+
+-- Bloklangan vaqt (UTC, datetime('now')); NULL — bloklanmagan
+ALTER TABLE users ADD COLUMN blocked_at TEXT;

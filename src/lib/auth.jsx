@@ -37,7 +37,8 @@ export function AuthProvider({ children }) {
       setStats(data.stats || null);
       return data;
     } catch (err) {
-      if (err.status === 401) signOutLocal();
+      // 401 — sessiya yo'q; 403 — hisob bloklangan
+      if (err.status === 401 || err.status === 403) signOutLocal();
       throw err;
     } finally {
       setReady(true);

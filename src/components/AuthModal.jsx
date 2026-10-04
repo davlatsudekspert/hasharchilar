@@ -8,6 +8,7 @@ import { btn, inputCls, labelCls, Spinner } from './ui.jsx';
 const REASONS = {
   join: "Hasharga qo'shilish uchun tizimga kiring — bu bor-yo'g'i bir daqiqa.",
   create: "Hashar e'lon qilish uchun tizimga kiring.",
+  admin: 'Admin panelga kirish uchun administrator hisobi bilan kiring.',
 };
 
 export default function AuthModal({ reason, onClose, onSuccess }) {

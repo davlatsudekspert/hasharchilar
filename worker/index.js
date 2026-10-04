@@ -2,6 +2,7 @@
 // Statik React build (dist/) Workers Static Assets orqali beriladi; bu yerga faqat /api/* keladi.
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { adminRoutes } from './admin.js';
 import { authRoutes, optionalAuth } from './auth.js';
 import { DoDatabase } from './d1-adapter.js';
 import { HasharDB } from './do-db.js';
@@ -71,6 +72,7 @@ app.get('/api/stats', getStats);
 app.route('/api', authRoutes); // /api/auth/*, /api/me
 app.route('/api/hashars', hasharRoutes);
 app.route('/api', mediaRoutes); // /api/media/*, /api/app, /api/app/download
+app.route('/api/admin', adminRoutes); // admin panel (faqat administratorlar)
 
 // ---------- Xatolar ----------
 

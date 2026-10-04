@@ -1,6 +1,7 @@
 // Modal steki: Esc (web) va Android "orqaga" tugmasi eng yuqoridagi modalni yopadi.
 // Modal yo'q bo'lsa native ilovadan chiqiladi. Body scroll ham shu yerda bloklanadi.
 import { IS_NATIVE } from './config.js';
+import { closeAdmin, isAdminRoute } from './route.js';
 
 const stack = []; // [{ close: () => void }]
 
@@ -48,7 +49,10 @@ export async function initBackButton() {
   try {
     const { App } = await import('@capacitor/app');
     await App.addListener('backButton', () => {
-      if (!closeTopModal()) App.exitApp();
+      if (closeTopModal()) return;
+      // Admin paneldan — saytga, aks holda ilovadan chiqish
+      if (isAdminRoute()) closeAdmin();
+      else App.exitApp();
     });
   } catch (err) {
     console.warn('backButton', err);

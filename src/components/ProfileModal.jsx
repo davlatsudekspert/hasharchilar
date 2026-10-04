@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
+import { openAdmin } from '../lib/route.js';
 import { cx, formatDateTime, formatMonth, formatPhone, volunteersLabel } from '../lib/utils.js';
 import { Thumb } from './HasharCard.jsx';
 import { ChevronRightIcon, LeafIcon, LogOutIcon } from './icons.jsx';
@@ -74,6 +75,19 @@ export default function ProfileModal({ onClose, onOpenHashar, onLoggedOut, refre
           {user.created_at && <p className="mt-0.5 text-xs text-slate-500">A'zo: {formatMonth(user.created_at)}dan beri</p>}
         </div>
       </div>
+
+      {user.is_admin && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose();
+            openAdmin();
+          }}
+          className={cx(btn.soft, 'mt-4 h-11 w-full ring-1 ring-emerald-200')}
+        >
+          <span aria-hidden="true">🛡️</span> Admin panel
+        </button>
+      )}
 
       <div className="mt-5 grid grid-cols-3 gap-2.5">
         <MiniStat value={stats?.created} label="Yaratgan" />

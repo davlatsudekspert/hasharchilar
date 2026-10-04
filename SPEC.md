@@ -25,6 +25,7 @@ hasharchilar/
 │   ├── do-db.js, d1-adapter.js #   SQLite Durable Object HasharDB va uning D1 bilan bir xil API adapteri
 │   ├── auth.js             #   parol xesh (PBKDF2), sessiya, requireAuth middleware
 │   ├── hashars.js          #   hashar marshrutlari
+│   ├── admin.js            #   /api/admin/* (admin panel)
 │   ├── media.js            #   R2 yuklash/berish, APK yuklab olish
 │   ├── ratelimit.js        #   D1 asosidagi oddiy limitlagich
 │   └── validate.js         #   kirish tekshiruvi
@@ -63,6 +64,8 @@ volunteers(id PK, hashar_id REFERENCES hashars ON DELETE CASCADE, user_id REFERE
            joined_at, UNIQUE(hashar_id, user_id))
 rate_limits(key TEXT PK, window_start INTEGER NOT NULL, count INTEGER NOT NULL)
 ```
+
+`migrations/0002_admin.sql`: `users.role TEXT NOT NULL DEFAULT 'user' CHECK IN ('user','admin')`, `users.blocked_at TEXT` (NULL — bloklanmagan).
 
 ## 4. Autentifikatsiya
 
@@ -105,6 +108,22 @@ Umumiy Hashar obyekti (`HasharDTO`):
 | GET | `/api/app` | – | `{available: bool, version: string|null, size: number|null, url: "/api/app/download"}` (statik `/app/hasharchilar.apk` + `/app/version.json`; zaxira — R2 `app/hasharchilar.apk`) |
 | GET | `/api/app/download` | – | APK fayl, `content-type: application/vnd.android.package-archive`, `content-disposition: attachment; filename="hasharchilar.apk"` |
 | GET | `/api/health` | – | `{ok:true}` |
+
+**Admin panel** (`/api/admin/*`, mehmon → 401, admin emas → 403). Admin = `users.role = 'admin'` YOKI telefon
+Worker secret `ADMIN_PHONES` da (vergul bilan, `parsePhone` bilan normallashtiriladi). `user` obyektida `is_admin`.
+Bloklangan foydalanuvchi: kirish → 403 "Hisobingiz bloklangan", token qabul qilinmaydi, bloklashda sessiyalari o'chadi.
+
+| Metod | Yo'l | Tavsif |
+|---|---|---|
+| GET | `/api/admin/overview` | `{users, admins, blocked, hashars, pending, completed, volunteers, media, signups_7d, hashars_7d, recent_hashars[5], recent_users[5]}` |
+| GET | `/api/admin/users?q=&offset=&limit=` | `{items:[{id,name,phone,role,is_admin,env_admin,blocked_at,created_at,created_count,joined_count}], total}`; limit ≤ 100 |
+| POST | `/api/admin/users/:id/block` · `/unblock` · `/role {role}` | → `{user}`; o'ziga yoki `ADMIN_PHONES` admin'iga (bloklash/oddiy qilish) → 409 |
+| DELETE | `/api/admin/users/:id` | foydalanuvchi + sessiyalar, qatnashuvlar, hasharlari (+ media, R2) → `{ok:true}`; o'zi / `ADMIN_PHONES` → 409 |
+| GET | `/api/admin/hashars?status=&q=&offset=&limit=` | `{items: HasharDTO + creator.phone, total}` |
+| DELETE | `/api/admin/hashars/:id` | istalgan holat; R2 rasmlari ham → `{ok:true}` |
+
+Web: admin panel `#admin` hash manzilida (sayt va APK), `src/admin/` — `React.lazy` bilan alohida bundle;
+Profil oynasida `is_admin` bo'lsa "🛡️ Admin panel" tugmasi.
 
 Rasm qoidalari: faqat `image/jpeg|png|webp`, ≤ 5 MB, kalit `<folder>/<uuid>.<ext>` (kengaytma MIME dan).
 Mijoz yuklashdan oldin rasmni canvas orqali ≤ 1600px JPEG (sifat 0.82) ga siqadi.

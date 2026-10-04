@@ -112,4 +112,16 @@ export const api = {
   leave: (id) => request(`/hashars/${id}/join`, { method: 'DELETE' }),
   complete: (id, form) => request(`/hashars/${id}/complete`, { method: 'POST', form }),
   remove: (id) => request(`/hashars/${id}`, { method: 'DELETE' }),
+
+  // Admin panel (/api/admin/*)
+  admin: {
+    overview: () => request('/admin/overview'),
+    users: (params) => request(`/admin/users${qs(params)}`),
+    block: (id) => request(`/admin/users/${id}/block`, { method: 'POST' }),
+    unblock: (id) => request(`/admin/users/${id}/unblock`, { method: 'POST' }),
+    setRole: (id, role) => request(`/admin/users/${id}/role`, { method: 'POST', json: { role } }),
+    deleteUser: (id) => request(`/admin/users/${id}`, { method: 'DELETE' }),
+    hashars: (params) => request(`/admin/hashars${qs(params)}`),
+    deleteHashar: (id) => request(`/admin/hashars/${id}`, { method: 'DELETE' }),
+  },
 };

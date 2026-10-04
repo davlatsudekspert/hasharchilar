@@ -4,6 +4,7 @@ import { limitAuth, limitLoginPhone } from './ratelimit.js';
 import {
   AuthError,
   ConflictError,
+  ForbiddenError,
   ValidationError,
   PASSWORD_MAX,
   parseName,
@@ -20,6 +21,7 @@ const SESSION_DAYS = 90;
 const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bayt base64url
 
 const enc = new TextEncoder();
+export const BLOCKED_MESSAGE = 'Hisobingiz bloklangan';
 
 // ---------- Kodlash yordamchilari ----------
 
@@ -96,7 +98,7 @@ const purgeExpired = (db) => db.prepare("DELETE FROM sessions WHERE expires_at <
 async function getSessionUser(db, tokenHash) {
   const row = await db
     .prepare(
-      `SELECT u.id, u.name, u.phone, u.created_at, (s.expires_at <= datetime('now')) AS expired
+      `SELECT u.id, u.name, u.phone, u.role, u.blocked_at, u.created_at, (s.expires_at <= datetime('now')) AS expired
        FROM sessions s JOIN users u ON u.id = s.user_id
        WHERE s.token_hash = ?1`,
     )
@@ -107,11 +109,46 @@ async function getSessionUser(db, tokenHash) {
     await db.prepare('DELETE FROM sessions WHERE token_hash = ?1').bind(tokenHash).run();
     return null;
   }
-  return { id: row.id, name: row.name, phone: row.phone, created_at: row.created_at };
+  return { id: row.id, name: row.name, phone: row.phone, role: row.role, blocked_at: row.blocked_at, created_at: row.created_at };
 }
 
+// ---------- Administratorlar ----------
+
+// ADMIN_PHONES (Worker secret, vergul bilan): normallashtirilgan to'plam; env qiymati o'zgarmasa qayta hisoblanmaydi
+let adminCache = { raw: null, phones: new Set() };
+
+/** env.ADMIN_PHONES dagi yaroqli raqamlar (+998XXXXXXXXX); noto'g'rilari e'tiborsiz qoldiriladi. */
+export function adminPhones(env) {
+  const raw = String(env?.ADMIN_PHONES ?? '');
+  if (raw !== adminCache.raw) {
+    const phones = new Set();
+    for (const part of raw.split(/[,;\n]/)) {
+      if (!part.trim()) continue;
+      try {
+        phones.add(parsePhone(part));
+      } catch {
+        // yaroqsiz raqam — o'tkazib yuboriladi
+      }
+    }
+    adminCache = { raw, phones };
+  }
+  return adminCache.phones;
+}
+
+/** Telefon ADMIN_PHONES da bormi (bunday admin'ni paneldan bloklab/o'chirib bo'lmaydi). */
+export const isEnvAdmin = (phone, env) => adminPhones(env).has(phone);
+
+/** Administratormi: DB dagi rol yoki ADMIN_PHONES. */
+export const isAdmin = (user, env) => Boolean(user) && (user.role === 'admin' || isEnvAdmin(user.phone, env));
+
 /** Mijozga qaytariladigan foydalanuvchi obyekti. */
-export const userDto = (u) => ({ id: u.id, name: u.name, phone: u.phone, created_at: toIso(u.created_at) });
+export const userDto = (u, env) => ({
+  id: u.id,
+  name: u.name,
+  phone: u.phone,
+  created_at: toIso(u.created_at),
+  is_admin: isAdmin(u, env),
+});
 
 // ---------- Middleware ----------
 
@@ -121,7 +158,10 @@ export async function optionalAuth(c, next) {
   if (m) {
     const tokenHash = TOKEN_RE.test(m[1]) ? await sha256Hex(m[1]) : null;
     const user = tokenHash ? await getSessionUser(c.env.DB, tokenHash) : null;
-    if (user) {
+    if (user?.blocked_at) {
+      // Bloklangan foydalanuvchi mehmon hisoblanadi; requireAuth 403 qaytaradi
+      c.set('blocked', true);
+    } else if (user) {
       c.set('user', user);
       c.set('tokenHash', tokenHash);
     } else {
@@ -134,6 +174,7 @@ export async function optionalAuth(c, next) {
 /** Kirish majburiy bo'lgan marshrutlar uchun. */
 export async function requireAuth(c, next) {
   if (!c.get('user')) {
+    if (c.get('blocked')) throw new ForbiddenError(BLOCKED_MESSAGE);
     throw new AuthError(c.get('authFailed') ? 'Sessiya muddati tugagan. Qaytadan kiring' : 'Avval tizimga kiring');
   }
   await next();
@@ -162,7 +203,7 @@ authRoutes.post('/auth/register', async (c) => {
     // Foydalanuvchi va sessiya bitta tranzaksiyada
     const [ins] = await db.batch([
       db
-        .prepare('INSERT INTO users (phone, name, password_hash) VALUES (?1, ?2, ?3) RETURNING id, name, phone, created_at')
+        .prepare('INSERT INTO users (phone, name, password_hash) VALUES (?1, ?2, ?3) RETURNING id, name, phone, role, created_at')
         .bind(phone, name, passwordHash),
       db
         .prepare(`INSERT INTO sessions (token_hash, user_id, expires_at)
@@ -175,7 +216,7 @@ authRoutes.post('/auth/register', async (c) => {
     if (/UNIQUE/i.test(String(err?.message))) throw new ConflictError("Bu telefon raqami allaqachon ro'yxatdan o'tgan");
     throw err;
   }
-  return c.json({ token, user: userDto(user) }, 201);
+  return c.json({ token, user: userDto(user, c.env) }, 201);
 });
 
 // POST /api/auth/login — {phone, password} → {token, user}
@@ -197,15 +238,20 @@ authRoutes.post('/auth/login', async (c) => {
   if (phone) await limitLoginPhone(c, phone);
 
   const row = phone
-    ? await db.prepare('SELECT id, name, phone, created_at, password_hash FROM users WHERE phone = ?1').bind(phone).first()
+    ? await db
+        .prepare('SELECT id, name, phone, role, blocked_at, created_at, password_hash FROM users WHERE phone = ?1')
+        .bind(phone)
+        .first()
     : null;
   // Foydalanuvchi bo'lmasa ham PBKDF2 bajariladi (vaqt orqali raqam borligini bilib bo'lmasin)
   const ok = await verifyPassword(password.slice(0, PASSWORD_MAX + 1), row ? row.password_hash : DUMMY_HASH);
   if (!row || !ok || password.length > PASSWORD_MAX) throw new AuthError("Telefon yoki parol noto'g'ri");
+  // Bloklanganlik faqat to'g'ri paroldan keyin aytiladi
+  if (row.blocked_at) throw new ForbiddenError(BLOCKED_MESSAGE);
 
   const { token, tokenHash } = await newToken();
   await db.batch([purgeExpired(db), insertSession(db, tokenHash, row.id)]);
-  return c.json({ token, user: userDto(row) });
+  return c.json({ token, user: userDto(row, c.env) });
 });
 
 // POST /api/auth/logout — joriy sessiyani o'chiradi
@@ -228,7 +274,7 @@ authRoutes.get('/me', requireAuth, async (c) => {
     .bind(user.id)
     .first();
   return c.json({
-    user: userDto(user),
+    user: userDto(user, c.env),
     stats: { created: stats.created, joined: stats.joined, completed: stats.completed },
   });
 });

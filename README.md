@@ -71,18 +71,20 @@ hasharchilar/
 ├── package.json             # web + worker + capacitor (bitta paket)
 ├── wrangler.jsonc           # Worker hasharchilar-api: assets ./dist (ASSETS), D1 (DB), DO (HASHAR_DB), R2 (PHOTOS)
 ├── capacitor.config.json    # uz.hasharchilar.app, webDir dist
-├── migrations/0001_init.sql # baza sxemasi (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
-├── schema.sql               # migratsiyaning nusxasi (qulaylik uchun)
+├── migrations/              # 0001_init.sql, 0002_admin.sql (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
+├── schema.sql               # migratsiyalar birlashtirilgani (qulaylik uchun)
 ├── seed.sql                 # FAQAT lokal namuna ma'lumot (parol: demo1234)
-├── worker/                  # Hono backend (+ do-db.js, d1-adapter.js, migrations.js, sql-split.js)
+├── worker/                  # Hono backend (+ admin.js, do-db.js, d1-adapter.js, migrations.js, sql-split.js)
 ├── scripts/wrangler-config.mjs # wrangler.jsonc → wrangler.deploy.json (--storage d1|do)
 ├── scripts/site-url.sh      # CI: https://<worker>.<subdomen>.workers.dev manzili
 ├── tests/api.test.mjs       # API testi (node:test, wrangler dev ga qarshi; D1 va DO rejimida)
+├── tests/admin.test.mjs     # admin panel API testi (server ADMIN_PHONES bilan); tests/helpers.mjs — umumiy
 ├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config
 ├── src/                     # React (sayt va APK uchun bir xil)
 │   ├── lib/                 #   config, api, auth, image, map, native, backButton, utils
-│   └── components/          #   Header, Hero, Tabs, MapView, HasharCard, HasharDetail,
-│                            #   CreateHasharModal (4 bosqich), AuthModal, ProfileModal, ...
+│   ├── components/          #   Header, Hero, Tabs, MapView, HasharCard, HasharDetail,
+│   │                        #   CreateHasharModal (4 bosqich), AuthModal, ProfileModal, ...
+│   └── admin/               #   admin panel (#admin, alohida lazy bundle)
 ├── public/                  # favicon, ikonlar, og-image, demo/ (seed rasmlari)
 ├── android/                 # Capacitor Android loyihasi (commit qilinadi)
 ├── resources/, scripts/     # ikonka/splash manbalari va generatori
@@ -131,18 +133,22 @@ boshlanadi, migratsiyalar birinchi so'rovda avtomatik qo'llanadi.
 ### Testlar
 
 ```bash
-npx wrangler dev --port 8787 &     # boshqa terminalda
-npm run test:api                   # node --test tests/  (BASE_URL bilan boshqa manzil berish mumkin)
+npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 &   # boshqa terminalda
+npm run test:api                   # tests/api.test.mjs + tests/admin.test.mjs (BASE_URL bilan boshqa manzil)
 
 # Durable Object rejimi (alohida port va saqlash papkasi):
 node scripts/wrangler-config.mjs --storage do
-npx wrangler dev --config wrangler.deploy.json --port 8788 --persist-to .wrangler/state-do-test &
+npx wrangler dev --config wrangler.deploy.json --port 8788 --persist-to .wrangler/state-do-test \
+  --var ADMIN_PHONES:+998900000099 &
 STORAGE=do BASE_URL=http://localhost:8788 npm run test:api
 
 npm run test:storage               # server kerak emas: DO adapteri = D1, migratsiyalar, wrangler-config
 ```
 
 - Test bo'sh bo'lmagan bazada ham qayta ishlaydi, chunki har safar tasodifiy telefon raqamlari va IP manzillar ishlatiladi.
+- Admin testlari (`tests/admin.test.mjs`) server **`ADMIN_PHONES`** bilan ishga tushgan bo'lishini talab qiladi:
+  `+998900000099` — soxta test raqami (boshqasi uchun `ADMIN_PHONE=+998... npm run test:api`). Bu raqam bilan
+  hisob bo'lmasa ro'yxatdan o'tiladi, bo'lsa kiriladi (parol `admin-test-123`). `npm run dev:api` ham shu raqamni beradi.
 - 300+ eski hasharli test eski sanali qatorlarni `wrangler d1 execute` bilan yozadi, shuning uchun DO
   rejimida (`STORAGE=do`) o'tkazib yuboriladi.
 - `/api/app` testi `dist/app/` ga qaraydi: `dist/app/hasharchilar.apk` + `version.json` bo'lsa "mavjud"
@@ -289,6 +295,7 @@ olib tashlash alohida migratsiya talab qiladi.
 | Secret | Majburiy | Izoh |
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | ha | Hisob `31c4b3d8ece4b65de515debc4552334a`. Kerakli ruxsatlar: **Account → Workers Scripts: Edit, Workers R2 Storage: Read** (bucket yo'q bo'lsa Edit), **Account Settings: Read**. Ixtiyoriy: **D1: Edit** (birinchi deploy'dan oldin bo'lsa D1 tanlanadi), custom domen uchun **Zone → Workers Routes: Edit, DNS: Read**. Token faqat wrangler / Cloudflare API qadamlariga beriladi: `npm ci`, build va Gradle uni ko'rmaydi |
+| `HASHARCHILAR_ADMIN_PHONES` | yo'q | admin panel egalari, vergul bilan (`+998901234567,+998...`); deploy'da Worker secret `ADMIN_PHONES` ga yoziladi (README → Admin panel) |
 | `HASHARCHILAR_KEYSTORE_BASE64` | yo'q (tavsiya etiladi) | `base64 -w0 release.jks` natijasi |
 | `HASHARCHILAR_KEYSTORE_PASSWORD` | yo'q | keystore paroli (kalit paroli ham shu bo'lishi kerak) |
 | `HASHARCHILAR_KEY_ALIAS` | yo'q | kalit aliasi |
@@ -315,6 +322,33 @@ Barqaror yechim — bir marta kalit yaratib, uni `HASHARCHILAR_KEYSTORE_*` secre
 kalitiga birinchi marta o'tish), workflow'ni qo'lda (**Run workflow**) `allow_key_change = true` bilan ishga
 tushiring — aks holda o'z kaliti farq qilgani uchun apk job xato beradi. Bunda foydalanuvchilar ilovani o'chirib,
 qayta o'rnatishi kerak bo'ladi.
+
+### Admin panel
+
+Admin panel saytda ham, Android ilovada ham **`#admin`** manzilida ochiladi (`https://hasharchilar.uz/#admin`).
+U alohida JS bo'lagi sifatida faqat shu manzil ochilganda yuklanadi. Bo'limlar: **Umumiy** (statistika, oxirgi
+hasharlar va foydalanuvchilar), **Foydalanuvchilar** (qidiruv; bloklash / blokdan chiqarish, admin qilish /
+oddiy qilish, o'chirish — hasharlari va rasmlari bilan), **Hasharlar** (holat filtri, qidiruv, ko'rish va istalgan
+holatdagi hasharni o'chirish).
+
+**Qanday admin bo'linadi:**
+
+1. GitHub → repo **Settings → Secrets and variables → Actions → New repository secret**:
+   nomi `HASHARCHILAR_ADMIN_PHONES`, qiymati — telefon raqam(lar), vergul bilan: `+998901234567` yoki
+   `+998901234567,+998935556677`. Raqamlarni hech qachon repodagi fayllarga yozmang (repo ochiq).
+2. Workflow'ni qayta ishga tushiring (**Actions → hasharchilar → Run workflow**) yoki `main` ga push qiling.
+   Deploy qadami secretni Worker'ning `ADMIN_PHONES` secret'iga yozadi (secret bo'sh bo'lsa — o'tkazib yuboriladi,
+   Worker'dagi qiymat o'zgarmaydi).
+3. Saytda (yoki ilovada) **shu raqam bilan** ro'yxatdan o'ting yoki kiring.
+4. **Profil → 🛡️ Admin panel** tugmasini bosing yoki `<sayt>/#admin` ni oching.
+
+Qoidalar:
+- Admin — `ADMIN_PHONES` dagi raqam **yoki** paneldan "Admin qilish" bilan tayinlangan foydalanuvchi (`users.role = 'admin'`).
+- `ADMIN_PHONES` orqali tayinlangan "asosiy admin"ni paneldan bloklab, oddiy qilib yoki o'chirib bo'lmaydi;
+  admin o'zini ham bloklay / o'chira / rolini o'zgartira olmaydi (409).
+- Bloklangan foydalanuvchining barcha sessiyalari o'chiriladi, kirishda "Hisobingiz bloklangan" (403) chiqadi;
+  uning hasharlari saytda qoladi.
+- CI'siz qo'lda: `printf '%s' '+998901234567' | npx wrangler secret put ADMIN_PHONES --name hasharchilar-api`.
 
 ### Sayt manzili va `hasharchilar.uz` domenini ulash
 
@@ -367,6 +401,14 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | GET | `/api/media/:folder/:file` | – | R2 dagi rasm (immutable kesh) |
 | GET | `/api/app`, `/api/app/download` | – | APK mavjudligi va versiyasi; faylni yuklab olish (statik `dist/app/`, zaxira — R2) |
 | GET | `/api/health` | – | `{ok:true}` |
+| GET | `/api/admin/overview` | ✓ admin | umumiy raqamlar + `recent_hashars`, `recent_users` (5 tadan) |
+| GET | `/api/admin/users` | ✓ admin | `?q=&offset=&limit=` (≤ 100) → `{items, total}` |
+| POST | `/api/admin/users/:id/block`, `/unblock`, `/role` | ✓ admin | bloklash (sessiyalar o'chadi) / blokdan chiqarish / `{role: 'user'\|'admin'}` |
+| DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, qatnashuvlari, hasharlari va ularning rasmlari |
+| GET | `/api/admin/hashars` | ✓ admin | `?status=&q=&offset=&limit=` → `{items: HasharDTO + creator.phone, total}` |
+| DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari bilan) |
+
+`user` obyektida (`/api/me`, kirish, ro'yxat) `is_admin` maydoni bor. Admin marshrutlari: mehmon → 401, oddiy foydalanuvchi → 403.
 
 CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor://localhost`, `http://localhost`,
 `http://localhost:5173` va so'rov kelgan hostning o'zi.
@@ -387,4 +429,4 @@ CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor:/
   Bu jamoat sayti hajmi uchun yetarli. DO bazasini `wrangler d1 execute/export` bilan ko'rib yoki eksport qilib
   bo'lmaydi (D1 ga o'tish — yuqoridagi "Keyinchalik D1 ga o'tish").
 - **APK hajmi:** statik fayl sifatida ≤ 25 MiB bo'lishi kerak (hozir ~3.6 MB); CI buni tekshiradi.
-- Push-bildirishnomalar, moderatsiya va admin panel hozircha yo'q.
+- Push-bildirishnomalar va avtomatik moderatsiya hozircha yo'q (qo'lda boshqarish — admin panel, `#admin`).

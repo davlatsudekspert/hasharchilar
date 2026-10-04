@@ -130,6 +130,19 @@ export const ImageIcon = icon(
     <path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21" />
   </>,
 );
+export const ShieldIcon = icon(
+  <>
+    <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1Z" />
+    <path d="m9 12 2 2 4-4" />
+  </>,
+);
+export const BanIcon = icon(
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <path d="m4.9 4.9 14.2 14.2" />
+  </>,
+);
+export const ArrowLeftIcon = icon(<path d="M19 12H5M12 19l-7-7 7-7" />);
 export const ChevronLeftIcon = icon(<path d="m15 18-6-6 6-6" />);
 export const ChevronRightIcon = icon(<path d="m9 18 6-6-6-6" />);
 export const UserIcon = icon(
