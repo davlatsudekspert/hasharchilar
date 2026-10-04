@@ -146,6 +146,7 @@ export default function ListPage({ route }) {
             type="button"
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
+            aria-label="Filtrlar"
             className={cx(btn.outline, 'relative h-12 px-4 shadow-soft', showFilters && 'ring-2 ring-emerald-500')}
           >
             <SlidersIcon className="h-5 w-5" /> <span className="hidden sm:inline">Filtrlar</span>

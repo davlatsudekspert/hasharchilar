@@ -59,6 +59,7 @@ export function ActionsProvider({ children }) {
         return r;
       } catch (e) {
         toast(e.message, 'error');
+        if (e.status === 409) refreshAfterChange(id); // joy qolmagan — sahifadagi holat yangilanadi
         return null;
       } finally {
         setBusyId(null);
@@ -78,6 +79,7 @@ export function ActionsProvider({ children }) {
         return r;
       } catch (e) {
         toast(e.message, 'error');
+        if (e.status === 409) refreshAfterChange(id); // masalan, hashar yakunlangan — holat yangilanadi
         return null;
       } finally {
         setBusyId(null);

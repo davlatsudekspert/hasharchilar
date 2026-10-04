@@ -49,6 +49,21 @@ function Info({ icon: Icon, label, children }) {
   );
 }
 
+// lg (1024px) dan kengmi — mini xarita faqat bitta joyda yaratiladi (yashirin ikkinchi WebGL konteksti ochilmaydi)
+const LG = '(min-width: 1024px)';
+function useIsDesktop() {
+  const [m, setM] = useState(() => typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(LG).matches);
+  useEffect(() => {
+    if (!window.matchMedia) return undefined;
+    const mq = window.matchMedia(LG);
+    const on = () => setM(mq.matches);
+    on();
+    mq.addEventListener ? mq.addEventListener('change', on) : mq.addListener(on);
+    return () => (mq.removeEventListener ? mq.removeEventListener('change', on) : mq.removeListener(on));
+  }, []);
+  return m;
+}
+
 function Skeleton() {
   return (
     <div className="mx-auto max-w-7xl px-4 pt-6 lg:px-6" aria-hidden="true">
@@ -80,6 +95,7 @@ export default function HasharPage({ route }) {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [showAllVolunteers, setShowAllVolunteers] = useState(false);
+  const isDesktop = useIsDesktop();
 
   useEffect(() => {
     if (!d.loading) hideSplash();
@@ -350,7 +366,7 @@ export default function HasharPage({ route }) {
 
           {/* Mobil: xarita */}
           <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:hidden">
-            <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-52" />
+            {!isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-52" /> : <div className="h-52" />}
             <div className="flex gap-2 p-3">
               <a href={googleDirections(h.lat, h.lng)} target="_blank" rel="noopener noreferrer" className={cx(btn.soft, 'h-11 flex-1 text-sm')}>
                 <NavigationIcon className="h-4 w-4" /> Google
@@ -396,7 +412,7 @@ export default function HasharPage({ route }) {
           </div>
 
           <div className="hidden overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:block">
-            <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-56" />
+            {isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-56" /> : <div className="h-56" />}
           </div>
 
           {/* Tashkilotchi */}

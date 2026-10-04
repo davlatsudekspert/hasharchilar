@@ -28,6 +28,7 @@ export default function LocationPicker({ value, onChange, onReverse, className }
   const [resolving, setResolving] = useState(false);
   const reverseCtl = useRef(null);
   const reverseTimer = useRef(null);
+  const pickedTerm = useRef(''); // tanlangan natija nomi — u bo'yicha qayta qidirilmaydi
 
   const reverse = (lat, lng) => {
     clearTimeout(reverseTimer.current);
@@ -85,7 +86,7 @@ export default function LocationPicker({ value, onChange, onReverse, className }
   // Qidiruv (debounce 400ms)
   useEffect(() => {
     const term = q.trim();
-    if (term.length < 3) {
+    if (term.length < 3 || term === pickedTerm.current) {
       setResults(null);
       setSearchError('');
       return undefined;
@@ -117,7 +118,9 @@ export default function LocationPicker({ value, onChange, onReverse, className }
   const pickResult = (r) => {
     haptic('select');
     setResults(null);
-    setQ(r.name || r.display || '');
+    const label = r.name || r.display || '';
+    pickedTerm.current = label.trim();
+    setQ(label);
     flyTo({ lat: Number(r.lat), lng: Number(r.lng) });
   };
 
