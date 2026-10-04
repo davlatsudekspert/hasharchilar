@@ -1,24 +1,13 @@
 // Admin panel API testi (/api/admin/*) — `wrangler dev` ga qarshi, server ADMIN_PHONES bilan ishga tushgan bo'lishi shart:
-//   npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099  &&  npm run test:api
+//   npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var EMAIL_MOCK:1  &&  npm run test:api
 // +998900000099 — soxta test raqami (ADMIN_PHONE env bilan boshqasini berish mumkin).
 // Qayta ishlaydi: admin hisobi bor bo'lsa kiriladi, qolgan foydalanuvchilar har safar yangi.
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { PNG_AFTER, RUN, api, hasharForm, register } from './helpers.mjs';
+import { ADMIN_PHONE, PNG_AFTER, RUN, adminLogin, api, hasharForm, register } from './helpers.mjs';
 
-const ADMIN_PHONE = process.env.ADMIN_PHONE || '+998900000099';
-const ADMIN_PASSWORD = 'admin-test-123';
 const BLOCKED = 'Hisobingiz bloklangan';
 
-/** ADMIN_PHONES dagi raqam bilan ro'yxat yoki kirish → { token, user }. */
-async function adminLogin() {
-  const reg = await api('/api/auth/register', { method: 'POST', json: { name: 'Test Admin', phone: ADMIN_PHONE, password: ADMIN_PASSWORD } });
-  if (reg.status === 201) return reg.data;
-  assert.equal(reg.status, 409, JSON.stringify(reg.data));
-  const r = await api('/api/auth/login', { method: 'POST', json: { phone: ADMIN_PHONE, password: ADMIN_PASSWORD } });
-  assert.equal(r.status, 200, `admin test hisobiga kirib bo'lmadi: ${JSON.stringify(r.data)}`);
-  return r.data;
-}
 
 const login = (phone, password) => api('/api/auth/login', { method: 'POST', json: { phone, password } });
 

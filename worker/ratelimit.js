@@ -126,3 +126,59 @@ export function limitGeo(c) {
     "Manzil qidiruvi juda ko'p. Bir daqiqadan so'ng qayta urinib ko'ring",
   );
 }
+
+/** Kirish: bitta emailga 10 urinish / 15 daqiqa (telefon bilan bir xil hisob turi). */
+export function limitLoginEmail(c, email) {
+  return rateLimit(c.env.DB, `login:${email}`, 10, 15 * 60, AUTH_MESSAGE);
+}
+
+// ---------- Email kodlari (OTP) ----------
+
+/**
+ * Qayta yuborish oralig'i: `key` bo'yicha oxirgi yuborishdan `cooldownSec` o'tmagan bo'lsa — 429 (Retry-After).
+ * O'tgan bo'lsa yangi vaqt yoziladi. Bitta atomar UPSERT: shart bajarilmasa qator yangilanmaydi va RETURNING bo'sh.
+ */
+export async function cooldown(db, key, cooldownSec) {
+  if (!(cooldownSec > 0)) return;
+  const now = Math.floor(Date.now() / 1000);
+  const row = await db
+    .prepare(
+      `INSERT INTO rate_limits (key, window_start, count) VALUES (?1, ?2, 1)
+       ON CONFLICT(key) DO UPDATE SET window_start = excluded.window_start, count = 1
+         WHERE rate_limits.window_start <= ?3
+       RETURNING window_start`,
+    )
+    .bind(key, now, now - cooldownSec)
+    .first();
+  if (row) return;
+  const cur = await db.prepare('SELECT window_start FROM rate_limits WHERE key = ?1').bind(key).first();
+  const wait = Math.max(1, (cur ? cur.window_start + cooldownSec : now + cooldownSec) - now);
+  throw new RateLimitError(`Yangi kodni ${wait} soniyadan so'ng so'rashingiz mumkin`, wait);
+}
+
+/** Qayta yuborish oralig'ini bekor qiladi (xat yuborilmay qolganda darhol qayta urinish mumkin bo'lsin). */
+export function clearCooldown(db, key) {
+  return db.prepare('DELETE FROM rate_limits WHERE key = ?1').bind(key).run();
+}
+
+/** Bitta emailga ko'pi bilan 5 ta kod / soat (barcha maqsadlar bo'yicha umumiy). */
+export function limitOtpEmail(c, email) {
+  return rateLimit(
+    c.env.DB,
+    `otp-mail:${email}`,
+    5,
+    60 * 60,
+    "Bu emailga juda ko'p kod yuborildi. Bir soatdan so'ng qayta urinib ko'ring",
+  );
+}
+
+/** Bitta IP dan ko'pi bilan 20 ta kod / soat. */
+export function limitOtpIp(c) {
+  return rateLimit(
+    c.env.DB,
+    `otp-ip:${clientIp(c)}`,
+    20,
+    60 * 60,
+    "Juda ko'p kod so'raldi. Bir soatdan so'ng qayta urinib ko'ring",
+  );
+}

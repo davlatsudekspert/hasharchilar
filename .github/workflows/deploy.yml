@@ -97,6 +97,8 @@ jobs:
 
       # ADMIN_PHONES — soxta test raqami (tests/admin.test.mjs shu raqam bilan admin bo'lib kiradi)
       # GEO_MOCK:1 — /api/geo/* haqiqiy Nominatim o'rniga deterministik soxta javob beradi (testlar tarmoqqa chiqmaydi)
+      # EMAIL_MOCK:1 — email kodlari Resend'ga yuborilmaydi, javobda `dev_code` qaytadi (tests/email.test.mjs);
+      #   tests/email.test.mjs email O'CHIQ holatni sinash uchun o'zi uchinchi (vaqtinchalik) wrangler dev ochadi.
       - name: wrangler dev — D1 (:8787) va Durable Object (:8788) rejimlari
         env:
           TEST_ADMIN_PHONES: '+998900000099'
@@ -104,9 +106,10 @@ jobs:
           set -euo pipefail
           node scripts/wrangler-config.mjs --storage "do"
           nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --inspector-port 9229 \
-            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
+            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 --var EMAIL_MOCK:1 > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
           nohup npx wrangler dev --config wrangler.deploy.json --port 8788 --ip 127.0.0.1 --inspector-port 9230 \
-            --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
+            --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 --var EMAIL_MOCK:1 \
+            > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
           for port in 8787 8788; do
             ready=""
             for i in $(seq 1 60); do
@@ -775,6 +778,52 @@ jobs:
             npx wrangler deploy --config wrangler.deploy.json 2>&1 | tee "$RUNNER_TEMP/deploy.log"
           fi
           echo "domain=${ATTACHED}" >> "$GITHUB_OUTPUT"
+
+      # Email (Resend): repo secret RESEND_API → Worker secret'lari RESEND_API_KEY va RESEND_FROM.
+      # Jo'natuvchi domeni Resend'dagi TASDIQLANGAN domenlardan olinadi: nomida "hasharchilar" bo'lgani, bo'lmasa
+      # birinchi "verified". Kalit cheklangan (faqat yuborish huquqi — /domains 401/403) yoki tasdiqlangan domen
+      # yo'q bo'lsa — nfcstore.uz (egasining Resend'da tasdiqlangan domeni). Kalit hech qachon chiqarilmaydi:
+      # niqoblanadi, curl'ga stdin orqali (argv'da ko'rinmaydi), wrangler'ga ham stdin orqali beriladi.
+      # Secret bo'sh bo'lsa o'tkazib yuboriladi — Worker'dagi mavjud qiymatlar o'zgarmaydi (kalit yo'q bo'lsa email
+      # o'chiq: eski telefon+parol ro'yxati ishlaydi). Token faqat shu qadamda.
+      - name: Email (Worker secret'lari RESEND_API_KEY, RESEND_FROM)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          RESEND_API: ${{ secrets.RESEND_API }}
+          FALLBACK_SENDER_DOMAIN: nfcstore.uz
+        run: |
+          set -euo pipefail
+          KEY="$(printf '%s' "${RESEND_API:-}" | tr -d '[:space:]')"
+          if [ -z "$KEY" ]; then
+            echo "::notice title=Email::RESEND_API secret bo'sh — email xizmati sozlanmadi (README → Email / Resend)."
+            exit 0
+          fi
+          echo "::add-mask::${KEY}"
+          DOMAIN=""
+          if DOMAINS_JSON="$(printf 'Authorization: Bearer %s\n' "$KEY" | curl -fsS --max-time 15 -H @- https://api.resend.com/domains 2>/dev/null)"; then
+            DOMAIN="$(printf '%s' "$DOMAINS_JSON" | jq -r '
+              [ (.data // [])[] | select(.status == "verified") | .name ] as $v
+              | (([ $v[] | select(test("hasharchilar"; "i")) ] + $v) | first) // empty' 2>/dev/null || true)"
+            if [ -z "$DOMAIN" ]; then
+              echo "::notice title=Email::Resend'da tasdiqlangan domen topilmadi — ${FALLBACK_SENDER_DOMAIN} ishlatiladi."
+            fi
+          else
+            echo "::notice title=Email::Resend domenlarini o'qib bo'lmadi (cheklangan kalit?) — ${FALLBACK_SENDER_DOMAIN} ishlatiladi."
+          fi
+          if ! printf '%s' "$DOMAIN" | grep -Eq '^[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'; then DOMAIN="$FALLBACK_SENDER_DOMAIN"; fi
+          FROM="Hasharchilar <no-reply@${DOMAIN}>"
+          LOG="$RUNNER_TEMP/resend-secret.log"
+          if ! printf '%s' "$KEY" | npx wrangler secret put RESEND_API_KEY --name "$WORKER_NAME" > "$LOG" 2>&1; then
+            echo "::error::RESEND_API_KEY secret'ini o'rnatib bo'lmadi"
+            grep -vF "$KEY" "$LOG" || true
+            exit 1
+          fi
+          if ! printf '%s' "$FROM" | npx wrangler secret put RESEND_FROM --name "$WORKER_NAME" > "$LOG" 2>&1; then
+            echo "::error::RESEND_FROM secret'ini o'rnatib bo'lmadi"
+            grep -vF "$KEY" "$LOG" || true
+            exit 1
+          fi
+          echo "✓ Email yoqildi: RESEND_API_KEY va RESEND_FROM (${FROM}) Worker secret'lari yangilandi"
 
       # Admin panel: HASHARCHILAR_ADMIN_PHONES (vergul bilan, +998...) → Worker secret ADMIN_PHONES.
       # Secret bo'sh bo'lsa o'tkazib yuboriladi (Worker'dagi mavjud qiymat o'zgarmaydi). Raqamlar repoga yozilmaydi.

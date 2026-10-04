@@ -2,12 +2,16 @@
 
 // ---------- Xato turlari (onError ularni { error } JSON ga aylantiradi) ----------
 
-/** Status kodli xato. `headers` — javobga qo'shiladigan qo'shimcha header'lar. */
+/**
+ * Status kodli xato. `headers` — javobga qo'shiladigan qo'shimcha header'lar;
+ * `code` — mijoz uchun mashina o'qiydigan belgi (javobda `{ error, code }`), masalan 'email_unverified'.
+ */
 export class HttpError extends Error {
-  constructor(status, message, headers = null) {
+  constructor(status, message, headers = null, code = null) {
     super(message);
     this.status = status;
     this.headers = headers;
+    this.code = code;
   }
 }
 export class ValidationError extends HttpError {
@@ -158,6 +162,36 @@ export function parseName(raw) {
   const name = cleanLine(raw);
   if (name.length < 2 || name.length > 60) throw new ValidationError("Ism 2–60 belgidan iborat bo'lsin");
   return name;
+}
+
+export const EMAIL_MAX = 254;
+const EMAIL_LOCAL_RE = /^[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*$/;
+const EMAIL_DOMAIN_RE = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,24}|xn--[a-z0-9-]{1,59})$/;
+
+/** Email: trim + kichik harf (bazada shu ko'rinishda saqlanadi), oddiy sintaksis tekshiruvi. */
+export function parseEmail(raw) {
+  const email = String(raw ?? '').trim().toLowerCase();
+  if (!email) throw new ValidationError('Email manzilini kiriting');
+  const at = email.lastIndexOf('@');
+  const local = email.slice(0, at);
+  const domain = email.slice(at + 1);
+  if (
+    at < 1 ||
+    email.length > EMAIL_MAX ||
+    local.length > 64 ||
+    !EMAIL_LOCAL_RE.test(local) ||
+    !EMAIL_DOMAIN_RE.test(domain)
+  ) {
+    throw new ValidationError("Email manzili noto'g'ri (masalan: ism@gmail.com)");
+  }
+  return email;
+}
+
+/** Emaildagi 6 xonali kod (bo'shliq va chiziqchalar e'tiborsiz). */
+export function parseOtpCode(raw) {
+  const code = String(raw ?? '').replace(/[\s-]/g, '');
+  if (!/^\d{6}$/.test(code)) throw new ValidationError('Emailga kelgan 6 xonali kodni kiriting');
+  return code;
 }
 
 export const PASSWORD_MAX = 128;

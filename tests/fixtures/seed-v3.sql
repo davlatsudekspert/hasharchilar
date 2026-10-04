@@ -1,15 +1,14 @@
--- Namuna ma'lumotlar — FAQAT lokal dev uchun (production'ga qo'llanmaydi).
--- Qo'llash: npx wrangler d1 execute hasharchilar --local --file=seed.sql
--- Barcha demo foydalanuvchilar paroli: demo1234. Emaillar soxta (@example.com), tasdiqlangan —
--- telefon yoki email bilan kirish mumkin (masalan: aziz@example.com / demo1234).
+-- v3 (0004_email dan oldingi sxema) namuna ma'lumotlari — FAQAT tests/storage.test.mjs uchun: 0004_email
+-- migratsiyasi to'la bazada sinaladi (joriy seed.sql email_verified_at ustunini ishlatadi).
+-- Barcha demo foydalanuvchilar paroli: demo1234
 
-INSERT OR IGNORE INTO users (id, phone, name, password_hash, bio, district, email, email_verified_at) VALUES
+INSERT OR IGNORE INTO users (id, phone, name, password_hash, bio, district) VALUES
   (1, '+998901112233', 'Aziz Karimov',    'pbkdf2$100000$Lqsxf80VEbI2gU5IXbPRKQ==$Ov3ojYnb5rEmmOR23iWGeU0z+/hqymmdfO6jjUEJE5k=',
-      'Mahallamizni toza saqlashni yaxshi ko''raman.', 'Chilonzor', 'aziz@example.com', datetime('now')),
+      'Mahallamizni toza saqlashni yaxshi ko''raman.', 'Chilonzor'),
   (2, '+998935556677', 'Malika Yusupova', 'pbkdf2$100000$cBH9qG0lHe/z0GH+K02WHQ==$jqfgnJOYV6kpc0TMIXXEH3Zrh667XndsMuEGDbn7MGk=',
-      'Ko''kalamzorlashtirish tashabbuskori.', 'Yunusobod', 'malika@example.com', datetime('now')),
+      'Ko''kalamzorlashtirish tashabbuskori.', 'Yunusobod'),
   (3, '+998977778899', 'Jasur Toshmatov', 'pbkdf2$100000$XpNWHjaaM0PWNwFKS13aeA==$z8rKPUtNC14cOKKNQWgM+YXBLWQzBSYr/pa9QZnOJD0=',
-      '', 'Mirzo Ulug''bek', 'jasur@example.com', datetime('now'));
+      '', 'Mirzo Ulug''bek');
 
 INSERT OR IGNORE INTO hashars (id, title, description, address, lat, lng, date_time, items, status, creator_id, completed_at, category, max_volunteers) VALUES
   (1, 'Mahalla bog''ini tozalash',
