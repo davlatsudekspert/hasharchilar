@@ -28,7 +28,13 @@ function Podium({ rows, meId }) {
               <Avatar name={r.user.name} src={r.user.avatar_url} size={p.place === 1 ? 'xl' : 'lg'} className={cx('ring-4 transition group-hover:scale-105', p.ring)} />
               <span className={cx('absolute -bottom-2 left-1/2 grid h-7 w-7 -translate-x-1/2 place-items-center rounded-full text-sm font-extrabold ring-2 ring-surface', p.badge)}>{p.place}</span>
             </div>
-            <p className={cx('mt-4 w-full truncate px-1 text-sm font-extrabold sm:text-base', r.user.id === meId ? 'text-brand' : 'text-ink')}>{r.user.name}</p>
+            {/* Ism ikki qatorgacha (tor ustunda "Malika Yu…" bo'lib qolmasin) */}
+            <p
+              className={cx('mt-4 line-clamp-2 w-full px-1 text-sm font-extrabold leading-tight [overflow-wrap:anywhere] sm:text-base', r.user.id === meId ? 'text-brand' : 'text-ink')}
+              title={r.user.name}
+            >
+              {r.user.name}
+            </p>
             <p className="text-xs font-bold text-ink-3 tabular">{r.score} ball</p>
             <div className={cx('mt-3 w-full rounded-t-3xl bg-gradient-to-b', p.bar, p.h)}>
               <p className="pt-3 font-display text-3xl font-extrabold text-ink/40 sm:text-4xl">{p.place}</p>
@@ -113,9 +119,17 @@ export default function LeaderboardPage() {
                         <Avatar name={r.user.name} src={r.user.avatar_url} size="md" />
                         <div className="min-w-0 flex-1">
                           <p className="truncate font-bold text-ink">{r.user.name}</p>
-                          <p className="truncate text-xs text-ink-3">
-                            {r.user.district ? `${r.user.district} · ` : ''}
-                            {r.joined} qatnashgan · {r.created} tashkil · {r.completed} yakunlangan
+                          {/* Tor ekranda qatorga ko'chadi (qirqilmaydi); bo'linish faqat "·" dan keyin */}
+                          <p className="text-xs leading-snug text-ink-3">
+                            {[r.user.district, `${r.joined} qatnashgan`, `${r.created} tashkil`, `${r.completed} yakunlangan`]
+                              .filter(Boolean)
+                              .map((t, j, arr) => (
+                                <span key={j} className="whitespace-nowrap">
+                                  {t}
+                                  {j < arr.length - 1 ? ' · ' : ''}
+                                  {j < arr.length - 1 && <wbr />}
+                                </span>
+                              ))}
                           </p>
                         </div>
                         <span className="rounded-full bg-surface-2 px-3 py-1 text-sm font-extrabold text-ink tabular ring-1 ring-line">{r.score}</span>

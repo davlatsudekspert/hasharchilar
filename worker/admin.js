@@ -2,7 +2,7 @@
 // Hammasi requireAdmin ortida: mehmon → 401, oddiy foydalanuvchi → 403.
 import { Hono } from 'hono';
 import { adminPhones, isAdmin, isEnvAdmin, requireAuth } from './auth.js';
-import { HASHAR_SELECT, toDto } from './hashars.js';
+import { HASHAR_SELECT, tashkentNow, toDto } from './hashars.js';
 import { deletePhotos } from './media.js';
 import { deleteComment } from './social.js';
 import {
@@ -162,7 +162,11 @@ adminRoutes.get('/users', async (c) => {
   return c.json({ items: list.results.map((u) => adminUserDto(u, c.env)), total: total.results[0].n });
 });
 
-// POST /api/admin/users/:id/block — bloklash; barcha sessiyalari o'chiriladi
+// POST /api/admin/users/:id/block — bloklash; barcha sessiyalari o'chiriladi va boshqalarning
+// hali bo'lmagan PENDING hasharlaridagi joylari bo'shatiladi (max_volunteers ni to'ldirib qo'ymasin).
+// COMPLETED tarixi va o'tib ketgan (sanasidan 3 soatdan ko'p o'tgan, hali yakunlanmagan) hasharlardagi
+// qatnashuv qoladi — u haqiqatda bo'lib o'tgan. Blokdan chiqarilganda qatnashuvlar tiklanmaydi.
+const BLOCK_KEEP_AFTER_MS = 3 * 3600e3; // src/lib/utils.js ONGOING_MIN bilan bir xil
 adminRoutes.post('/users/:id/block', async (c) => {
   const db = c.env.DB;
   const id = parseId(c.req.param('id'), USER_NOT_FOUND);
@@ -170,6 +174,12 @@ adminRoutes.post('/users/:id/block', async (c) => {
   await db.batch([
     db.prepare("UPDATE users SET blocked_at = COALESCE(blocked_at, datetime('now')) WHERE id = ?1").bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
+    db
+      .prepare(
+        `DELETE FROM volunteers WHERE user_id = ?1
+           AND hashar_id IN (SELECT id FROM hashars WHERE status = 'PENDING' AND creator_id <> ?1 AND date_time >= ?2)`,
+      )
+      .bind(id, tashkentNow(-BLOCK_KEEP_AFTER_MS)),
   ]);
   return c.json({ user: adminUserDto(await loadUser(db, id), c.env) });
 });

@@ -4,7 +4,7 @@ import { BanIcon, CheckIcon, ShieldIcon, TrashIcon, UserIcon } from '../componen
 import { useToast } from '../components/Toast.jsx';
 import { Avatar, btn, EmptyState, ErrorState } from '../components/ui.jsx';
 import { api } from '../lib/api.js';
-import { cx, formatDay, formatPhone } from '../lib/utils.js';
+import { cx, formatDateShort, formatDay, formatPhone } from '../lib/utils.js';
 import { Badge, ConfirmDialog, LoadMore, RowsSkeleton, SearchField, useDebounced, usePagedList } from './shared.jsx';
 
 /** Rol / holat badge'lari. */
@@ -58,7 +58,7 @@ export default function UsersTab({ meId, initialQuery = '' }) {
     const variants = {
       block: {
         title: 'Foydalanuvchini bloklash',
-        text: `${name} tizimdan chiqariladi va qayta kira olmaydi. Hasharlari saytda qoladi. Keyinroq blokdan chiqarish mumkin.`,
+        text: `${name} tizimdan chiqariladi va qayta kira olmaydi. Hasharlari saytda qoladi, boshqalarning yakunlanmagan hasharlaridagi joylari bo'shatiladi. Keyinroq blokdan chiqarish mumkin.`,
         confirmLabel: 'Bloklash',
         danger: true,
         run: () => apply(u, () => api.admin.block(u.id), `${name} bloklandi`),
@@ -122,8 +122,9 @@ export default function UsersTab({ meId, initialQuery = '' }) {
             <ShieldIcon className="h-4 w-4" /> Admin qilish
           </button>
         )}
-        <button type="button" onClick={() => ask(u, 'delete')} className={cx(btn.dangerSoft, ACTION_BTN)}>
-          <TrashIcon className="h-4 w-4" /> O'chirish
+        {/* Telefonda faqat ikonka — uchala tugma bitta qatorga sig'adi */}
+        <button type="button" onClick={() => ask(u, 'delete')} aria-label="O'chirish" title="O'chirish" className={cx(btn.dangerSoft, ACTION_BTN, 'max-sm:w-9 max-sm:px-0')}>
+          <TrashIcon className="h-4 w-4" /> <span className="max-sm:hidden">O'chirish</span>
         </button>
       </div>
     );
@@ -179,7 +180,7 @@ export default function UsersTab({ meId, initialQuery = '' }) {
                     </p>
                   </div>
                 </div>
-                <dl className="grid grid-cols-3 gap-2 text-center text-xs lg:w-72 lg:shrink-0">
+                <dl className="grid grid-cols-3 gap-2 text-center text-xs lg:w-[21rem] lg:shrink-0">
                   <div className="rounded-xl bg-slate-50 px-2 py-1.5">
                     <dt className="font-semibold text-slate-500">Yaratgan</dt>
                     <dd className="text-sm font-extrabold text-slate-900">{u.created_count}</dd>
@@ -190,7 +191,9 @@ export default function UsersTab({ meId, initialQuery = '' }) {
                   </div>
                   <div className="rounded-xl bg-slate-50 px-2 py-1.5">
                     <dt className="font-semibold text-slate-500">A'zo</dt>
-                    <dd className="truncate text-sm font-extrabold text-slate-900">{formatDay(u.created_at)}</dd>
+                    <dd className="truncate text-[13px] font-extrabold tabular-nums text-slate-900 min-[380px]:text-sm" title={formatDay(u.created_at)}>
+                      {formatDateShort(u.created_at)}
+                    </dd>
                   </div>
                 </dl>
                 <div className="lg:w-[360px] lg:shrink-0 lg:text-right lg:[&>div]:justify-end">{renderActions(u)}</div>

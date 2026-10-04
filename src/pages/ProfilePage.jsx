@@ -1,5 +1,5 @@
 // O'z profilim: sarlavha (avatar, bio, tuman, statistika, daraja), mening hasharlarim, nishonlar, sozlamalar.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { appDownloadUrl } from '../components/AppBanner.jsx';
 import AuthForm from '../components/AuthForm.jsx';
 import { EmailVerifyFlow } from '../components/EmailOtp.jsx';
@@ -29,7 +29,7 @@ import { btn, CardSkeleton, EmptyState, ErrorState, Link, Segmented, Spinner } f
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { IS_NATIVE, SITE_URL } from '../lib/config.js';
-import { haptic, shareLink } from '../lib/native.js';
+import { haptic, onRestoredPhoto, peekRestoredPhoto, shareLink } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
 import { useServerConfig } from '../lib/serverConfig.js';
 import { clearCache, useApi } from '../lib/store.js';
@@ -79,7 +79,7 @@ function MyHashars() {
             }
           />
         ) : (
-          <ul className="grid gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {list.map((h) => (
               <li key={h.id}>
                 <HasharRow hashar={h} action={false} />
@@ -249,6 +249,13 @@ export default function ProfilePage({ route, appInfo }) {
   const { user, stats, ready } = useAuth();
   const [tab, setTab] = useState(route.query.tab === 'sozlamalar' ? 'settings' : route.query.tab === 'nishonlar' ? 'badges' : 'hashars');
   const [editing, setEditing] = useState(false);
+
+  // APK: OS kamera paytida ilovani o'ldirgan bo'lsa — profil tahriri suratni oladi
+  useEffect(() => {
+    const check = () => peekRestoredPhoto('avatar') && setEditing(true);
+    check();
+    return onRestoredPhoto(check);
+  }, []);
 
   if (!ready) {
     return (

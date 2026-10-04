@@ -25,7 +25,7 @@ const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // sanasidan 1 kun o'tgan PENDING �
 const NOT_FOUND = 'Hashar topilmadi';
 
 /** Toshkent vaqti (UTC+5) 'YYYY-MM-DDTHH:MM', `offsetMs` siljish bilan. */
-const tashkentNow = (offsetMs = 0) => new Date(Date.now() + 5 * 3600e3 + offsetMs).toISOString().slice(0, 16);
+export const tashkentNow = (offsetMs = 0) => new Date(Date.now() + 5 * 3600e3 + offsetMs).toISOString().slice(0, 16);
 
 /**
  * HasharDTO uchun umumiy SELECT. Birinchi parametr (?) — joriy foydalanuvchi ID si
@@ -135,7 +135,7 @@ export function haversineKm(lat1, lng1, lat2, lng2) {
 
 export const hasharRoutes = new Hono();
 
-// GET /api/hashars?status=&mine=&q=
+// GET /api/hashars?status=&mine=&q=&category=&from=&to=&near=&radius_km=
 hasharRoutes.get('/', async (c) => {
   const user = c.get('user');
   const uid = user?.id ?? null;
@@ -193,9 +193,11 @@ hasharRoutes.get('/', async (c) => {
     params.push(near.lat - dLat, near.lat + dLat, near.lng - dLng, near.lng + dLng);
   }
 
+  const db = c.env.DB;
+  if (near) return c.json(await listNear(db, { status, where, params, near, uid }));
+
   // Har bir holat alohida tanlanadi: aks holda yakunlanmay qolgan eski PENDING'lar 300 lik
   // limitni to'ldirib, kelgusi va bajarilgan hasharlarni ro'yxatdan siqib chiqaradi.
-  const db = c.env.DB;
   const cond = (s) => `WHERE ${[`h.status = '${s}'`, ...where].join(' AND ')}`;
   const cutoff = tashkentNow(-STALE_AFTER_MS); // shundan oldingi PENDING — "eskirgan"
   const stmts = [];
@@ -237,18 +239,38 @@ hasharRoutes.get('/', async (c) => {
 
   // Chiqish tartibi (SPEC): PENDING sana bo'yicha o'sish, keyin COMPLETED eng yangisi
   pending.sort((a, b) => (a.date_time < b.date_time ? -1 : a.date_time > b.date_time ? 1 : b.id - a.id));
-  const rows = [...pending, ...completed];
-  if (!near) return c.json(rows.map((r) => toDto(r, uid)));
+  return c.json([...pending, ...completed].map((r) => toDto(r, uid)));
+});
 
-  // near: radius ichidagilar, eng yaqini birinchi (teng masofada — oldingi tartib saqlanadi)
+/**
+ * near: radius ichidagi eng yaqin LIST_LIMIT ta hashar, eng yaqini birinchi, `distance_km` bilan.
+ * Tanlov SQL'da taxminiy masofa (tekis proyeksiya: dLat² + (dLng·cos lat)²) bo'yicha — sana bo'yicha
+ * LIMIT bo'lsa, radiusda 300 dan ko'p hashar bo'lganda eng yaqinlari tushib qolardi. Keyin JS'da
+ * aniq haversine: radiusdan tashqaridagilar (to'rtburchak burchaklari) olib tashlanadi va qayta saralanadi.
+ * Teng masofada: avval PENDING (sana bo'yicha), keyin COMPLETED (eng yangisi).
+ */
+async function listNear(db, { status, where, params, near, uid }) {
+  const conds = status ? [`h.status = '${status}'`, ...where] : where; // where da doim to'rtburchak bor
+  const k = Math.cos((near.lat * Math.PI) / 180);
+  const { results } = await db
+    .prepare(
+      `${HASHAR_SELECT} WHERE ${conds.join(' AND ')}
+       ORDER BY (h.lat - ?) * (h.lat - ?) + (h.lng - ?) * (h.lng - ?) * ? ASC,
+                (h.status = 'COMPLETED') ASC,
+                CASE WHEN h.status = 'PENDING' THEN h.date_time END ASC,
+                COALESCE(h.completed_at, h.created_at) DESC, h.id DESC
+       LIMIT ${LIST_LIMIT}`,
+    )
+    .bind(...params, near.lat, near.lat, near.lng, near.lng, k * k)
+    .all();
   const out = [];
-  for (const [i, r] of rows.entries()) {
+  for (const [i, r] of results.entries()) {
     const d = haversineKm(near.lat, near.lng, r.lat, r.lng);
     if (d <= near.radius) out.push({ i, d, dto: { ...toDto(r, uid), distance_km: Math.round(d * 100) / 100 } });
   }
   out.sort((a, b) => a.d - b.d || a.i - b.i);
-  return c.json(out.map((x) => x.dto));
-});
+  return out.map((x) => x.dto);
+}
 
 // GET /api/hashars/:id — DTO + volunteers + (ruxsat bo'lsa) creator.phone
 hasharRoutes.get('/:id', async (c) => {
@@ -438,6 +460,14 @@ hasharRoutes.delete('/:id', requireVerifiedEmail, async (c) => {
   return c.json({ ok: true });
 });
 
+// Tuman nomi (users.district, erkin matn) taqqoslash uchun: kichik harf (ASCII), apostroflarsiz,
+// oxiridagi " tumani" / " tuman" siz — "Chilonzor", "chilonzor tumani" bitta tuman; "Mirzo Ulug'bek" = "Mirzo Ulugʻbek"
+const DISTRICT_KEY = `CASE WHEN n LIKE '% tumani' THEN rtrim(substr(n, 1, length(n) - 7))
+                          WHEN n LIKE '% tuman' THEN rtrim(substr(n, 1, length(n) - 6))
+                          ELSE n END`;
+const DISTRICT_NORM = `replace(replace(replace(replace(replace(replace(lower(trim(district)),
+                         'ʻ', ''), 'ʼ', ''), '‘', ''), '’', ''), '\`', ''), '''', '')`;
+
 // GET /api/stats — bosh sahifa uchun umumiy raqamlar
 export async function getStats(c) {
   const row = await c.env.DB.prepare(
@@ -445,7 +475,9 @@ export async function getStats(c) {
             (SELECT COUNT(*) FROM hashars WHERE status = 'COMPLETED') AS completed,
             (SELECT COUNT(DISTINCT user_id) FROM volunteers) AS volunteers,
             (SELECT COUNT(*) FROM hashars WHERE status = 'PENDING' AND date_time >= ?1) AS upcoming,
-            (SELECT COUNT(DISTINCT lower(district)) FROM users WHERE district <> '' AND blocked_at IS NULL) AS districts`,
+            (SELECT COUNT(DISTINCT ${DISTRICT_KEY})
+               FROM (SELECT ${DISTRICT_NORM} AS n FROM users WHERE district <> '' AND blocked_at IS NULL)
+              WHERE n <> '') AS districts`,
   )
     .bind(tashkentNow())
     .first();

@@ -88,6 +88,24 @@ jobs:
       - name: Build (sayt)
         run: npm run build
 
+      # MapLibre (~1 MB) faqat xarita ochilganda lazy yuklanadi: index.html uni oldindan yuklamasin
+      # (modulepreload / stylesheet) va kirish chunk'i uni statik import qilmasin (vite.config.js izohiga qarang).
+      - name: Bosh sahifa bundle'ida MapLibre yo'q
+        run: |
+          set -euo pipefail
+          ls dist/assets/maplibre-*.js > /dev/null
+          if grep -qi maplibre dist/index.html; then
+            echo "::error::dist/index.html MapLibre'ni oldindan yuklaydi"; grep -oi '[^"]*maplibre[^"]*' dist/index.html; exit 1
+          fi
+          ENTRY=$(grep -o 'src="/assets/index-[^"]*\.js"' dist/index.html | head -n 1 | sed 's/^src="\///; s/"$//' || true)
+          # Kirish chunk'i topilmasa — aniq xato (bo'sh ENTRY bilan tekshiruv "o'tib ketmasin")
+          if [ -z "$ENTRY" ] || [ ! -f "dist/$ENTRY" ]; then
+            echo "::error::Kirish chunk'i dist/index.html dan topilmadi"; exit 1
+          fi
+          if grep -Eq '(import|from)[[:space:]]*"\./maplibre-' "dist/$ENTRY"; then
+            echo "::error::Kirish chunk'i ($ENTRY) MapLibre chunk'ini statik import qiladi"; exit 1
+          fi
+
       # Token BERILMAYDI: hamma narsa to'liq lokal (wrangler dev / miniflare).
       - name: Baza qatlami testlari (DO adapteri = D1, migratsiyalar)
         run: npm run test:storage

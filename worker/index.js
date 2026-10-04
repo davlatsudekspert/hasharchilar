@@ -47,7 +47,7 @@ app.use('/api/*', async (c, next) => {
       Object.assign(headers, {
         'access-control-allow-origin': allow,
         'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
-        'access-control-allow-headers': 'Authorization, Content-Type',
+        'access-control-allow-headers': 'Authorization, Content-Type, X-Client',
         'access-control-max-age': '86400',
       });
     }

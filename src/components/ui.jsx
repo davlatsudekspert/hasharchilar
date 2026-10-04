@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { mediaUrl } from '../lib/config.js';
 import { categoryOf } from '../lib/meta.js';
-import { navigate } from '../lib/router.js';
+import { goBack, navigate } from '../lib/router.js';
 import { cx, hashIndex, initials } from '../lib/utils.js';
 import { AlertIcon, ArrowLeftIcon, CATEGORY_ICONS, CheckIcon, LeafIcon, RefreshIcon } from './icons.jsx';
 
@@ -30,20 +30,24 @@ export const btn = {
 export const card = 'rounded-3xl border border-line bg-surface shadow-soft';
 
 /** Status badge: "Kutilmoqda" (amber) / "Bajarildi" (emerald). */
+/** Holat belgisi. status: 'PENDING' | 'COMPLETED' | 'PAST' (sanasi o'tgan, yakunlanmagan — utils.statusOf). */
 export function StatusBadge({ status, className }) {
   const done = status === 'COMPLETED';
+  const past = status === 'PAST';
   return (
     <span
       className={cx(
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold',
         done
           ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300'
-          : 'bg-amber-100 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300',
+          : past
+            ? 'bg-slate-200 text-slate-700 dark:bg-slate-400/15 dark:text-slate-300'
+            : 'bg-amber-100 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300',
         className,
       )}
     >
-      <span className={cx('h-1.5 w-1.5 rounded-full', done ? 'bg-emerald-500' : 'bg-amber-500')} />
-      {done ? 'Bajarildi' : 'Kutilmoqda'}
+      <span className={cx('h-1.5 w-1.5 rounded-full', done ? 'bg-emerald-500' : past ? 'bg-slate-400' : 'bg-amber-500')} />
+      {done ? 'Bajarildi' : past ? "O'tib ketgan" : 'Kutilmoqda'}
     </span>
   );
 }
@@ -309,7 +313,7 @@ export function PageHeader({ title, subtitle, back, action, icon: Icon }) {
       {back && (
         <button
           type="button"
-          onClick={() => (typeof back === 'function' ? back() : window.history.length > 1 ? window.history.back() : navigate('/'))}
+          onClick={() => (typeof back === 'function' ? back() : goBack('/'))}
           aria-label="Orqaga"
           className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl border border-line bg-surface text-ink-2 shadow-sm transition hover:text-ink active:scale-95 lg:hidden"
         >

@@ -12,7 +12,7 @@ Barcha mavjud funksiyalar (auth, hashar CRUD, join/leave, complete, before/after
 | Koordinata → manzil | Nominatim reverse — `GET /api/geo/reverse?lat=&lng=` | keshlanadi (koordinata 4 xonagacha yaxlitlanadi) |
 | Yo'l ko'rsatish | Google Maps / Yandex Maps chuqur havolalar | `https://www.google.com/maps/dir/?api=1&destination=lat,lng`, `https://yandex.uz/maps/?rtext=~lat,lng&rtt=auto` |
 
-Nominatim qoidasi: soniyasiga ≤1 so'rov → worker'da kesh + foydalanuvchi bo'yicha rate limit (30/daqiqa).
+Nominatim qoidasi: soniyasiga ≤1 so'rov → worker'da kesh + IP bo'yicha rate limit (30/daqiqa) + keshda yo'q so'rovlar uchun umumiy navbat (≥ 1.1 s oraliq, 3 s dan keyin 503); mijozda avtomatik to'ldirish yo'q (qidiruv Enter / "Qidirish" bilan).
 
 ## 2. Backend o'zgarishlari (migration 0003 — mavjud ma'lumotli bazada ishlashi SHART, NOT NULL → DEFAULT)
 

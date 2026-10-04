@@ -4,7 +4,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { compressImage } from '../lib/image.js';
 import { computeBadges, levelOf, scoreOf } from '../lib/meta.js';
-import { haptic, HAS_NATIVE_CAMERA, takeNativePhoto } from '../lib/native.js';
+import { haptic, HAS_NATIVE_CAMERA, onRestoredPhoto, takeNativePhoto, takeRestoredPhoto } from '../lib/native.js';
 import { invalidate } from '../lib/store.js';
 import { cx, formatMonth } from '../lib/utils.js';
 import { BADGE_ICONS, CalendarIcon, CameraIcon, CheckIcon, EditIcon, ImageIcon, PinIcon, ShieldIcon, TrashIcon } from './icons.jsx';
@@ -38,7 +38,7 @@ export function ProfileHero({ person, stats, action, editable, onEditAvatar }) {
         {action && <div className="absolute right-4 top-4">{action}</div>}
       </div>
       <div className="px-5 pb-6 sm:px-8">
-        <div className="-mt-14 flex flex-col gap-4 sm:-mt-16 sm:flex-row sm:items-end">
+        <div className="-mt-14 flex flex-col gap-4 sm:-mt-16 sm:flex-row sm:items-start">
           <div className="relative w-fit">
             <Avatar name={person.name} src={person.avatar_url} size="2xl" className="ring-[5px] ring-surface" />
             {editable && (
@@ -52,7 +52,8 @@ export function ProfileHero({ person, stats, action, editable, onEditAvatar }) {
               </button>
             )}
           </div>
-          <div className="min-w-0 flex-1 sm:pb-1">
+          {/* sm+: ism banner ostiga kirib, kesilib qolmasin (avatar 112px, banner ustida 64px) */}
+          <div className="min-w-0 flex-1 sm:pt-[76px]">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="truncate text-2xl font-extrabold text-ink sm:text-3xl">{person.name}</h1>
               {person.is_admin && (
@@ -201,11 +202,23 @@ export function EditProfileModal({ onClose }) {
 
   const camera = async () => {
     try {
-      accept(await takeNativePhoto());
+      accept(await takeNativePhoto('avatar'));
     } catch (e) {
       setError(e.message);
     }
   };
+
+  // APK: ilova qayta tiklangach kutilayotgan avatar surati
+  useEffect(() => {
+    const check = () => {
+      const f = takeRestoredPhoto('avatar');
+      if (f) accept(f);
+    };
+    check();
+    return onRestoredPhoto(check);
+    // accept faqat setState chaqiradi
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const save = async (e) => {
     e.preventDefault();

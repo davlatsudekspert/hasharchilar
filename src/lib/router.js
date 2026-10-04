@@ -37,8 +37,30 @@ export function parseHash(hash) {
 
 // ---- Holat (useSyncExternalStore uchun barqaror snapshot) ----
 let current = parseHash(typeof window !== 'undefined' ? window.location.hash : '');
-let pendingPush = false;
+let pending = null; // null | 'push' | 'replace' — navigate() boshlagan o'tish
 let lastWasPop = false;
+
+// Ilova ichidagi tarix chuqurligi: har yozuvning history.state.hIdx (0 — ilovaga kirilgan yozuv).
+// goBack() faqat oldingi yozuv ham ilovaniki bo'lsa history.back() qiladi — aks holda (havola orqali to'g'ridan-to'g'ri
+// ochilgan sahifa) brauzer tarixidagi boshqa saytga emas, ilovaning o'z sahifasiga o'tadi.
+const readIdx = () => {
+  const s = window.history.state;
+  return s && typeof s === 'object' && typeof s.hIdx === 'number' ? s.hIdx : null;
+};
+const writeIdx = (n) => {
+  try {
+    const s = window.history.state;
+    window.history.replaceState({ ...(s && typeof s === 'object' ? s : {}), hIdx: n }, '');
+  } catch {
+    /* e'tiborsiz */
+  }
+};
+let depth = 0;
+if (typeof window !== 'undefined') {
+  const s = readIdx();
+  depth = s ?? 0;
+  if (s == null) writeIdx(0);
+}
 const scrollPositions = new Map();
 const listeners = new Set();
 
@@ -48,8 +70,23 @@ function emit() {
 
 function onHashChange() {
   const next = parseHash(window.location.hash);
-  lastWasPop = !pendingPush;
-  pendingPush = false;
+  const kind = pending;
+  lastWasPop = !kind;
+  pending = null;
+  if (kind === 'push') {
+    depth += 1;
+    writeIdx(depth);
+  } else if (kind === 'replace') {
+    writeIdx(depth);
+  } else {
+    // Orqaga/oldinga — yozuvdagi chuqurlik; holatsiz yangi yozuv (manzil qatoriga qo'lda yozilgan hash) — yangi qadam
+    const s = readIdx();
+    if (s != null) depth = s;
+    else {
+      depth += 1;
+      writeIdx(depth);
+    }
+  }
   if (next.hash === current.hash) return;
   current = next;
   emit();
@@ -88,7 +125,7 @@ export function navigate(to, { replace = false } = {}) {
   const target = `#${to.startsWith('/') ? to : `/${to}`}`;
   if (target === window.location.hash) return;
   scrollPositions.delete(target);
-  pendingPush = true;
+  pending = replace ? 'replace' : 'push';
   if (replace) {
     window.history.replaceState(window.history.state, '', target);
     onHashChange();
@@ -97,9 +134,9 @@ export function navigate(to, { replace = false } = {}) {
   }
 }
 
-/** Orqaga: tarix bo'lsa — history.back(), aks holda bosh sahifa. */
+/** Orqaga: oldingi yozuv ilovaniki bo'lsa — history.back(), aks holda `fallback` sahifa (tarixni almashtirib). */
 export function goBack(fallback = '/') {
-  if (window.history.length > 1 && current.name !== 'home') window.history.back();
+  if (depth > 0 && current.name !== 'home') window.history.back();
   else navigate(fallback, { replace: true });
 }
 

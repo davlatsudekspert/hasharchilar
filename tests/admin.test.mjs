@@ -4,7 +4,21 @@
 // Qayta ishlaydi: admin hisobi bor bo'lsa kiriladi, qolgan foydalanuvchilar har safar yangi.
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { ADMIN_PHONE, PNG_AFTER, RUN, adminLogin, api, hasharForm, register } from './helpers.mjs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { ADMIN_PHONE, BASE, PNG_AFTER, RUN, adminLogin, api, hasharForm, register } from './helpers.mjs';
+
+// O'tmish sanasini API orqali qo'yib bo'lmaydi — faqat lokal D1 ga `wrangler d1 execute` (DO rejimida o'tkaziladi)
+const CAN_D1_EXEC =
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE) && process.env.STORAGE !== 'do' && !process.env.SKIP_D1_EXEC;
+function d1Exec(sql) {
+  const persist = process.env.D1_PERSIST_TO ? ['--persist-to', process.env.D1_PERSIST_TO] : [];
+  execFileSync('npx', ['wrangler', 'd1', 'execute', 'hasharchilar', '--local', ...persist, '--command', sql], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    stdio: 'pipe',
+    env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+  });
+}
 
 const BLOCKED = 'Hisobingiz bloklangan';
 
@@ -140,6 +154,81 @@ describe('Admin panel', () => {
     const me2 = await api('/api/me', { token: again.data.token });
     assert.equal(me2.status, 200);
   });
+
+  test("bloklash: boshqalarning PENDING hasharlaridagi joylar bo'shaydi; o'z hashari va COMPLETED tarixi qoladi", async () => {
+    const owner = await register(`Joy egasi ${RUN}`);
+    const troll = await register(`Troll ${RUN}`);
+    const legit = await register(`Haqiqiy ${RUN}`);
+    const mk = async (u, over = {}) => {
+      const r = await api('/api/hashars', { method: 'POST', token: u.token, form: hasharForm(over, null) });
+      assert.equal(r.status, 201, JSON.stringify(r.data));
+      return r.data;
+    };
+    const small = await mk(owner, { max_volunteers: '2' });
+    const done = await mk(owner);
+    const trollOwn = await mk(troll);
+    for (const h of [small, done]) assert.equal((await api(`/api/hashars/${h.id}/join`, { method: 'POST', token: troll.token })).status, 200);
+    const full = await api(`/api/hashars/${small.id}/join`, { method: 'POST', token: legit.token });
+    assert.equal(full.status, 409);
+    assert.equal(full.data.error, 'Joy qolmadi');
+    const fd = new FormData();
+    fd.append('photo', new Blob([PNG_AFTER], { type: 'image/png' }), 'keyin.png');
+    assert.equal((await api(`/api/hashars/${done.id}/complete`, { method: 'POST', token: owner.token, form: fd })).status, 200);
+
+    assert.equal((await api(`/api/admin/users/${troll.user.id}/block`, { method: 'POST', token: admin.token })).status, 200);
+    const s = await api(`/api/hashars/${small.id}`);
+    assert.equal(s.data.volunteer_count, 1, 'joy bo\'shadi');
+    assert.deepEqual(s.data.volunteers.map((v) => v.id), [owner.user.id]);
+    const j = await api(`/api/hashars/${small.id}/join`, { method: 'POST', token: legit.token });
+    assert.equal(j.status, 200, JSON.stringify(j.data));
+    assert.equal(j.data.volunteer_count, 2);
+    // COMPLETED tarixi va o'z hashari (tashkilotchi qatori) o'zgarmaydi
+    const d = await api(`/api/hashars/${done.id}`);
+    assert.ok(d.data.volunteers.some((v) => v.id === troll.user.id), 'yakunlangan hashar tarixi qoladi');
+    assert.equal(d.data.volunteer_count, 2);
+    const t = await api(`/api/hashars/${trollOwn.id}`);
+    assert.equal(t.data.volunteer_count, 1);
+    assert.deepEqual(t.data.volunteers.map((v) => v.id), [troll.user.id]);
+
+    // Blokdan chiqarilgach qatnashuv tiklanmaydi; qayta qo'shilish — joy bo'lsa
+    assert.equal((await api(`/api/admin/users/${troll.user.id}/unblock`, { method: 'POST', token: admin.token })).status, 200);
+    const back = await login(troll.phone, troll.password);
+    assert.equal(back.status, 200);
+    assert.equal((await api(`/api/hashars/${small.id}`)).data.volunteer_count, 2);
+    const again = await api(`/api/hashars/${small.id}/join`, { method: 'POST', token: back.data.token });
+    assert.equal(again.status, 409);
+    assert.equal(again.data.error, 'Joy qolmadi');
+  });
+
+  test(
+    "bloklash: o'tib ketgan (yakunlanmagan) PENDING hashardagi qatnashuv qoladi, kelgusidagi bo'shaydi",
+    { skip: CAN_D1_EXEC ? false : "faqat lokal D1 (wrangler d1 execute)" },
+    async () => {
+      const owner = await register(`O'tgan egasi ${RUN}`);
+      const troll = await register(`O'tgan troll ${RUN}`);
+      const mk = async () => {
+        const r = await api('/api/hashars', { method: 'POST', token: owner.token, form: hasharForm({}, null) });
+        assert.equal(r.status, 201, JSON.stringify(r.data));
+        return r.data;
+      };
+      const past = await mk();
+      const ongoing = await mk();
+      const future = await mk();
+      for (const h of [past, ongoing, future]) {
+        assert.equal((await api(`/api/hashars/${h.id}/join`, { method: 'POST', token: troll.token })).status, 200);
+      }
+      // past — 2 kun oldin (o'tib ketgan), ongoing — 1 soat oldin (hali "Hozir", 3 soat ichida)
+      const tk = (ms) => new Date(Date.now() + 5 * 3600e3 + ms).toISOString().slice(0, 16);
+      d1Exec(`UPDATE hashars SET date_time = '${tk(-48 * 3600e3)}' WHERE id = ${Number(past.id)}`);
+      d1Exec(`UPDATE hashars SET date_time = '${tk(-3600e3)}' WHERE id = ${Number(ongoing.id)}`);
+
+      assert.equal((await api(`/api/admin/users/${troll.user.id}/block`, { method: 'POST', token: admin.token })).status, 200);
+      const has = async (h) => (await api(`/api/hashars/${h.id}`)).data.volunteers.some((v) => v.id === troll.user.id);
+      assert.equal(await has(past), true, "o'tib ketgan hashardagi qatnashuv qoladi");
+      assert.equal(await has(ongoing), false, "3 soat ichidagi hashardan bo'shaydi");
+      assert.equal(await has(future), false, "kelgusi hashardan bo'shaydi");
+    },
+  );
 
   test('rol: admin qilish → panelga kiradi; oddiy qilish → 403', async () => {
     const u = await register(`Rol ${RUN}`);

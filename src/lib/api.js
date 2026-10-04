@@ -5,6 +5,13 @@ import { mirrorToken } from './native.js';
 import { storage, TOKEN_KEY } from './storage.js';
 
 /**
+ * Mijoz versiyasi (worker/auth.js clientVersion) — eski APK'ni ajratish uchun.
+ * Sarlavha emas, `?client=3` query: CORS preflight ro'yxatini o'zgartirmaydi, shuning uchun
+ * yangi APK eski (yoki orqaga qaytarilgan) worker bilan ham ishlaydi.
+ */
+const CLIENT_VERSION = 3;
+
+/**
  * HTTP status bilan xato (UI faqat `message` ni ko'rsatadi).
  * `code` — serverning mashina o'qiydigan belgisi ('email_unverified', 'email_required'),
  * `retryAfter` — 429 da necha soniyadan keyin qayta urinish mumkin.
@@ -64,7 +71,12 @@ function fallbackMessage(status) {
 export async function request(path, { method = 'GET', json, form, signal, keepSession = false } = {}) {
   const headers = { Accept: 'application/json' };
   const token = getToken();
-  if (token) headers.Authorization = `Bearer ${token}`;
+  let url = `${API_BASE}/api${path}`;
+  // Kirgan so'rovlarda mijoz versiyasi (server eski v2 mijozni ajratadi)
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+    url += `${path.includes('?') ? '&' : '?'}client=${CLIENT_VERSION}`;
+  }
 
   let body;
   if (json !== undefined) {
@@ -76,7 +88,7 @@ export async function request(path, { method = 'GET', json, form, signal, keepSe
 
   let res;
   try {
-    res = await fetch(`${API_BASE}/api${path}`, { method, headers, body, signal });
+    res = await fetch(url, { method, headers, body, signal });
   } catch (err) {
     if (err && err.name === 'AbortError') throw err;
     throw new ApiError('Internet aloqasini tekshiring', 0);

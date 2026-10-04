@@ -1,0 +1,4 @@
+# Cloudflare Workers Static Assets: hash'li fayllar (vite build → /assets/*) hech qachon o'zgarmaydi —
+# brauzer ularni har tashrifda qayta tekshirmasin. index.html standart (max-age=0, must-revalidate) qoladi.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

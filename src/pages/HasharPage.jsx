@@ -30,10 +30,10 @@ import { useActions } from '../lib/actions.jsx';
 import { api } from '../lib/api.js';
 import { IS_NATIVE, mediaUrl } from '../lib/config.js';
 import { downloadIcs, googleCalendarUrl, googleDirections, yandexDirections } from '../lib/meta.js';
-import { haptic, hideSplash } from '../lib/native.js';
+import { haptic, hideSplash, onRestoredPhoto, peekRestoredPhoto } from '../lib/native.js';
 import { goBack, navigate } from '../lib/router.js';
 import { invalidate, peek, useApi } from '../lib/store.js';
-import { countdown, cx, formatDateLong, formatDay, formatPhone, osmLink, timeAgo } from '../lib/utils.js';
+import { countdown, cx, formatDateLong, formatDay, formatPhone, isOverdue, osmLink, statusOf, timeAgo } from '../lib/utils.js';
 
 function Info({ icon: Icon, label, children }) {
   return (
@@ -101,11 +101,25 @@ export default function HasharPage({ route }) {
     if (!d.loading) hideSplash();
   }, [d.loading]);
 
-  const h = d.data || seed;
+  // APK: OS kamera paytida ilovani o'ldirgan bo'lsa — "Keyin" surati bilan yakunlash oynasini qayta ochamiz
+  const afterTag = `after-${id}`;
+  useEffect(() => {
+    const check = () => peekRestoredPhoto(afterTag) && setMode('complete');
+    check();
+    return onRestoredPhoto(check);
+  }, [afterTag]);
+
+  // Server 404 qaytarsa (o'chirilgan) — ro'yxat keshidagi eski nusxa "jonli" sahifa bo'lib ko'rinmasin
+  const gone = !!(d.error && d.error.status === 404);
+  useEffect(() => {
+    if (gone) invalidate('hashars', 'stats', 'me:', 'user:', 'leaderboard');
+  }, [gone]);
+
+  const h = gone ? null : d.data || seed;
 
   if (!h && d.loading) return <Skeleton />;
   if (!h) {
-    const notFound = d.error && d.error.status === 404;
+    const notFound = gone;
     return (
       <div className="mx-auto max-w-xl px-4 py-16">
         {notFound ? (
@@ -127,6 +141,7 @@ export default function HasharPage({ route }) {
   }
 
   const done = h.status === 'COMPLETED';
+  const past = isOverdue(h); // sanasi o'tgan, yakunlanmagan
   const before = mediaUrl(h.before_url);
   const after = mediaUrl(h.after_url);
   const phone = (h.joined || h.is_owner) && h.creator ? h.creator.phone : null;
@@ -201,7 +216,7 @@ export default function HasharPage({ route }) {
             <TrashIcon className="h-4 w-4" /> Hasharni o'chirish
           </button>
         </>
-      ) : h.joined && !done ? (
+      ) : h.joined && !done && !past ? (
         <div className="flex gap-2">
           <JoinButton hashar={h} size="lg" className="flex-1" />
           <button type="button" disabled={actions.busyId === h.id} onClick={doLeave} className={cx(btn.outline, 'h-12 px-4')}>
@@ -237,7 +252,7 @@ export default function HasharPage({ route }) {
       <button
         type="button"
         onClick={addToCalendar}
-        disabled={done}
+        disabled={done || past}
         className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface-2 py-3 text-xs font-bold text-ink-2 ring-1 ring-line transition hover:text-brand active:scale-95 disabled:opacity-40"
       >
         <CalendarPlusIcon className="h-5 w-5" /> Kalendar
@@ -297,7 +312,7 @@ export default function HasharPage({ route }) {
           {/* Sarlavha */}
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <StatusBadge status={h.status} />
+              <StatusBadge status={statusOf(h)} />
               <CategoryChip category={h.category} />
               {left && (
                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 dark:bg-sky-400/15 dark:text-sky-300">
@@ -308,14 +323,15 @@ export default function HasharPage({ route }) {
                 <span className="rounded-full bg-surface-2 px-2.5 py-1 text-xs font-bold text-ink-2 ring-1 ring-line">Siz tashkilotchisiz</span>
               ) : (
                 h.joined &&
-                !done && (
+                !done &&
+                !past && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">
                     <CheckIcon className="h-3 w-3" strokeWidth={3} /> Siz qatnashasiz
                   </span>
                 )
               )}
             </div>
-            <h1 className="mt-3 text-[28px] font-extrabold leading-tight text-ink sm:text-4xl">{h.title}</h1>
+            <h1 className="mt-3 text-[28px] font-extrabold leading-tight text-ink [overflow-wrap:anywhere] sm:text-4xl">{h.title}</h1>
             <p className="mt-2 text-sm text-ink-3">
               E'lon qilindi {timeAgo(h.created_at)} ·{' '}
               <Link to={`/u/${h.creator?.id}`} className="font-semibold text-ink-2 hover:text-brand">
@@ -325,9 +341,10 @@ export default function HasharPage({ route }) {
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Info icon={CalendarIcon} label={done ? "Bo'lib o'tdi" : 'Qachon'}>
+            <Info icon={CalendarIcon} label={done || past ? "Bo'lib o'tdi" : 'Qachon'}>
               {formatDateLong(h.date_time)}
               {done && h.completed_at && <p className="text-sm font-medium text-brand">Yakunlandi: {formatDay(h.completed_at)}</p>}
+              {past && <p className="text-sm font-medium text-ink-3">Tashkilotchi hali yakunlamagan</p>}
             </Info>
             <Info icon={UsersIcon} label="Ko'ngillilar">
               {h.volunteer_count || 0} kishi{h.max_volunteers ? ` / ${h.max_volunteers} joy` : ''}
@@ -368,7 +385,7 @@ export default function HasharPage({ route }) {
 
           {/* Mobil: xarita */}
           <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:hidden">
-            {!isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-52" /> : <div className="h-52" />}
+            {!isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-52" /> : <div className="h-52" />}
             <div className="flex gap-2 p-3">
               <a href={googleDirections(h.lat, h.lng)} target="_blank" rel="noopener noreferrer" className={cx(btn.soft, 'h-11 flex-1 text-sm')}>
                 <NavigationIcon className="h-4 w-4" /> Google
@@ -392,8 +409,8 @@ export default function HasharPage({ route }) {
                     {h.volunteer_count}
                     <span className="text-base font-bold text-ink-3">/{h.max_volunteers}</span>
                   </span>
-                  <span className={cx('text-sm font-bold', done || spots ? 'text-brand' : 'text-red-600')}>
-                    {done ? "ko'ngilli qatnashdi" : spots ? `${spots} joy qoldi` : 'Joy qolmadi'}
+                  <span className={cx('text-sm font-bold', past ? 'text-ink-3' : done || spots ? 'text-brand' : 'text-red-600')}>
+                    {done ? "ko'ngilli qatnashdi" : past ? "ko'ngilli yozilgan" : spots ? `${spots} joy qoldi` : 'Joy qolmadi'}
                   </span>
                 </div>
                 <Progress value={h.volunteer_count} max={h.max_volunteers} />
@@ -401,7 +418,12 @@ export default function HasharPage({ route }) {
             ) : (
               <p className="mb-4 flex items-baseline gap-2">
                 <span className="font-display text-2xl font-extrabold text-ink tabular">{h.volunteer_count || 0}</span>
-                <span className="text-sm font-semibold text-ink-3">{done ? "ko'ngilli qatnashdi" : "ko'ngilli qo'shildi · joy cheklanmagan"}</span>
+                <span className="text-sm font-semibold text-ink-3">{done ? "ko'ngilli qatnashdi" : past ? "ko'ngilli yozilgan" : "ko'ngilli qo'shildi · joy cheklanmagan"}</span>
+              </p>
+            )}
+            {past && h.is_owner && (
+              <p className="mb-3 flex gap-2 rounded-2xl bg-amber-50 px-3.5 py-2.5 text-sm font-medium text-amber-900 ring-1 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-200 dark:ring-amber-400/20">
+                <ClockIcon className="mt-0.5 h-4 w-4 shrink-0" /> Hashar sanasi o'tdi. "Keyin" rasmini yuklab yakunlang — natija galereyaga qo'shiladi.
               </p>
             )}
             <div className="hidden lg:block">{primaryActions}</div>
@@ -414,7 +436,7 @@ export default function HasharPage({ route }) {
           </div>
 
           <div className="hidden overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:block">
-            {isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={h.status} className="h-56" /> : <div className="h-56" />}
+            {isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-56" /> : <div className="h-56" />}
           </div>
 
           {/* Tashkilotchi */}
@@ -526,7 +548,7 @@ export default function HasharPage({ route }) {
               <p className="text-sm text-ink-3">"Oldin" rasmi bilan solishtiriladi. Iloji boricha xuddi shu burchakdan suratga oling.</p>
             </div>
           )}
-          <PhotoInput value={afterPhoto} onChange={setAfterPhoto} onBusyChange={setPhotoBusy} title={'"Keyin" rasmini yuklang'} hint="Majburiy · JPG, PNG yoki WebP" />
+          <PhotoInput value={afterPhoto} onChange={setAfterPhoto} onBusyChange={setPhotoBusy} restoreTag={afterTag} title={'"Keyin" rasmini yuklang'} hint="Majburiy · JPG, PNG yoki WebP" />
         </Modal>
       )}
 

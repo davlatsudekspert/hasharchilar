@@ -31,7 +31,7 @@ function ResultCard({ h, big }) {
       <div className={cx('px-5 pb-5 pt-2', big && 'lg:flex lg:flex-col lg:justify-center lg:p-8')}>
         {big && <p className="mb-2 text-xs font-extrabold uppercase tracking-[0.14em] text-brand">Eng so'nggi natija</p>}
         <CategoryChip category={h.category} short />
-        <h3 className={cx('mt-2 font-extrabold leading-snug text-ink', big ? 'text-2xl sm:text-3xl' : 'text-[17px]')}>
+        <h3 className={cx('mt-2 font-extrabold leading-snug text-ink [overflow-wrap:anywhere]', big ? 'text-2xl sm:text-3xl' : 'text-[17px]')}>
           <Link to={`/hashar/${h.id}`} className="hover:text-brand">
             {h.title}
           </Link>
@@ -126,7 +126,7 @@ export default function ResultsPage() {
             <div className="space-y-5">
               <ResultCard h={first} big />
               {rest.length > 0 && (
-                <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {rest.map((h) => (
                     <li key={h.id}>
                       <ResultCard h={h} />

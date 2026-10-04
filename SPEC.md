@@ -130,7 +130,7 @@ Umumiy Hashar obyekti (`HasharDTO`):
 | POST | `/api/hashars/:id/complete` | ✓ egasi | multipart `photo` (AFTER, majburiy) → `HasharDTO` (status COMPLETED, completed_at) |
 | DELETE | `/api/hashars/:id` | ✓ egasi | faqat PENDING; R2 rasmlarini ham o'chiradi → `{ok:true}` |
 | GET | `/api/media/:folder/:file` | – | R2 dan rasm; `folder ∈ {before, after}`; immutable cache, nosniff |
-| GET | `/api/app` | – | `{available: bool, version: string|null, size: number|null, url: "/api/app/download"}` (statik `/app/hasharchilar.apk` + `/app/version.json`; zaxira — R2 `app/hasharchilar.apk`) |
+| GET | `/api/app` | – | `{available: bool, version: string|null, versionCode: number|null, size: number|null, url: "/api/app/download"}` (statik `/app/hasharchilar.apk` + `/app/version.json`; zaxira — R2 `app/hasharchilar.apk`) |
 | GET | `/api/app/download` | – | APK fayl, `content-type: application/vnd.android.package-archive`, `content-disposition: attachment; filename="hasharchilar.apk"` |
 | GET | `/api/health` | – | `{ok:true}` |
 
@@ -142,7 +142,7 @@ Bloklangan foydalanuvchi: kirish → 403 "Hisobingiz bloklangan", token qabul qi
 |---|---|---|
 | GET | `/api/admin/overview` | `{users, admins, blocked, hashars, pending, completed, volunteers, media, signups_7d, hashars_7d, recent_hashars[5], recent_users[5]}` |
 | GET | `/api/admin/users?q=&offset=&limit=` | `{items:[{id,name,phone,role,is_admin,env_admin,blocked_at,created_at,created_count,joined_count}], total}`; limit ≤ 100 |
-| POST | `/api/admin/users/:id/block` · `/unblock` · `/role {role}` | → `{user}`; o'ziga yoki `ADMIN_PHONES` admin'iga (bloklash/oddiy qilish) → 409 |
+| POST | `/api/admin/users/:id/block` · `/unblock` · `/role {role}` | → `{user}`; o'ziga yoki `ADMIN_PHONES` admin'iga (bloklash/oddiy qilish) → 409; bloklash sessiyalarni va boshqalarning hali bo'lmagan PENDING hasharlaridagi (sanasi "hozir − 3 soat" dan keyin) qatnashuvlarni o'chiradi (o'z hasharlari, COMPLETED tarixi va o'tib ketgan, yakunlanmagan hasharlardagi qatnashuv qoladi; blokdan chiqarilganda tiklanmaydi) |
 | DELETE | `/api/admin/users/:id` | foydalanuvchi + sessiyalar, qatnashuvlar, hasharlari (+ media, R2) → `{ok:true}`; o'zi / `ADMIN_PHONES` → 409 |
 | GET | `/api/admin/hashars?status=&q=&offset=&limit=` | `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | istalgan holat; R2 rasmlari ham → `{ok:true}` |
@@ -182,6 +182,10 @@ bitta emailga 5 / soat (barcha maqsadlar), bitta IP dan 20 / soat. Test uchun (f
 `{error: "Avval emailingizni tasdiqlang", code: "email_unverified"}`. Qo'llanadi: `POST /api/hashars`,
 `POST|DELETE /api/hashars/:id/join`, `POST /api/hashars/:id/complete`, `DELETE /api/hashars/:id`,
 `POST /api/hashars/:id/comments`. Kirish, ko'rish, `/api/me/*` (profil, parol, email) va `/api/admin/*` — cheklanmaydi.
+v3+ mijozlar token bilan so'rovlarda `?client=3` query yuboradi (`X-Client: hasharchilar/3` sarlavhasi ham qabul
+qilinadi). Query tanlangani: CORS preflight ro'yxati o'zgarmaydi, ya'ni yangi APK eski yoki orqaga qaytarilgan
+worker bilan ham ishlayveradi. Belgisiz (eski v2 APK — email oynasi yo'q) mijozga shu holatda 403
+`{error: "Ilovani yangilang: …", code: "app_update_required"}` qaytadi.
 
 `user` (o'ziga: `/api/me`, kirish, ro'yxat, profil): `+ email` (null bo'lishi mumkin), `email_verified` (boolean).
 Admin `users` ro'yxati: `+ email, email_verified`, qidiruv emailni ham qamraydi; foydalanuvchi o'chirilganda
@@ -195,7 +199,7 @@ Admin `users` ro'yxati: `+ email, email_verified`, qidiruv emailni ham qamraydi;
 
 | Metod | Yo'l | Auth | Tavsif |
 |---|---|---|---|
-| GET | `/api/hashars` | ixt. | qo'shimcha query: `category=greening` yoki `greening,repair` (noto'g'ri → 400); `from`/`to` = `YYYY-MM-DD` (Toshkent sanasi, ikkala chegara ham kiradi; `from > to` → 400); `near=lat,lng` + `radius_km` (standart 50, 0.1–1000) — SQL'da to'rtburchak, JS'da haversine, radius ichidagilar eng yaqini birinchi, `distance_km` bilan |
+| GET | `/api/hashars` | ixt. | qo'shimcha query: `category=greening` yoki `greening,repair` (noto'g'ri → 400); `from`/`to` = `YYYY-MM-DD` (Toshkent sanasi, ikkala chegara ham kiradi; `from > to` → 400); `near=lat,lng` + `radius_km` (standart 50, 0.1–1000) — SQL'da to'rtburchak va taxminiy masofa bo'yicha eng yaqin 300 ta (sana bo'yicha emas), JS'da aniq haversine, radius ichidagilar eng yaqini birinchi, `distance_km` bilan |
 | POST | `/api/hashars` | ✓ | `+ category` (bo'sh → `cleaning`), `+ max_volunteers` (bo'sh → null, aks holda butun 2–1000) |
 | POST | `/api/hashars/:id/join` | ✓ | joy to'lgan → 409 `"Joy qolmadi"` (shart INSERT ichida, bitta tranzaksiya); allaqachon a'zo → 200 |
 | GET | `/api/hashars/:id/comments` | ixt. | `[{id, body, created_at, user:{id,name,avatar_url}, is_mine}]` oxirgi 200 ta, eski → yangi; hashar yo'q → 404 |
@@ -208,10 +212,12 @@ Admin `users` ro'yxati: `+ email, email_verified`, qidiruv emailni ham qamraydi;
 | GET | `/api/geo/search?q=` | – | q 2–120 belgi → `[{name, display, lat, lng}]` ≤ 6 (Nominatim `countrycodes=uz`) |
 | GET | `/api/geo/reverse?lat=&lng=` | – | `{display, district, city}` (topilmasa bo'sh satrlar); koordinata 4 xonaga yaxlitlanib keshlanadi |
 | GET | `/api/media/avatars/:file` | – | avatar (media allowlist: `before`, `after`, `avatars`) |
-| GET | `/api/stats` | – | `{hashars, completed, volunteers, upcoming /* kelgusi PENDING */, districts /* users.district noyob, bo'sh emas */}` |
+| GET | `/api/stats` | – | `{hashars, completed, volunteers, upcoming /* kelgusi PENDING */, districts /* bloklanmaganlarning users.district noyob qiymatlari: kichik harf, apostroflarsiz, oxiridagi "tumani"/"tuman" siz; hech kim kiritmagan bo'lsa 0 — bosh sahifa o'rniga "Kutilmoqda" (upcoming) ko'rsatadi */}` |
 
 Geo: `User-Agent: hasharchilar.uz/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)`, `format=jsonv2`,
-`accept-language=uz,ru`; `geo_cache` 30 kun (`x-geo-cache: hit|miss`); IP bo'yicha 30 / daqiqa; upstream xatosi
+`accept-language=uz,ru`; `geo_cache` 30 kun (`x-geo-cache: hit|miss`); IP bo'yicha 30 / daqiqa; keshda yo'q so'rovlar
+umumiy navbat bilan (barcha IP lar uchun upstream so'rovlar orasida ≥ 1.1 s; 3 s da navbat kelmasa → 503 `"Manzil xizmati band.
+Bir necha soniyadan so'ng qayta urinib ko'ring"` + Retry-After); upstream xatosi
 yoki 8 s timeout → 502 `"Manzil xizmati vaqtincha ishlamayapti"` (keshlanmaydi). `env.GEO_MOCK === '1'` — testlar
 uchun deterministik soxta javob (`x-geo-source: mock`), production'da o'rnatilmaydi.
 
@@ -254,6 +260,7 @@ xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.
 - Profil oynasi: ism, telefon, statistika, "Mening hasharlarim" (yaratganlarim / qo'shilganlarim), "Chiqish".
 - Bajarilganlar: Oldin/Keyin slayder galereyasi.
 - Saytda (native emas) va Android brauzerda: "📱 Android ilovasini yuklab olish" banneri, agar `/api/app` `available`.
+  APK ichida (bosh sahifa): `/api/app` `versionCode` > `App.getInfo().build` bo'lsa "Yangi versiya" banneri.
 - Bo'sh holatlar, yuklanish skeletlari, xato + "Qayta urinish", toast xabarlar.
 - Accessibility: tugmalarda aria-label, modal Esc bilan yopiladi, fokus ko'rinadi.
 - Native'da: Android "orqaga" tugmasi ochiq modalni yopadi, modal bo'lmasa ilovadan chiqadi (`@capacitor/app`);

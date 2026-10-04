@@ -148,26 +148,31 @@ mediaRoutes.get('/app', async (c) => {
     await asset.body?.cancel();
     const info = await assetAppInfo(c);
     const version = info?.version ? String(info.version) : null;
-    return c.json({ available: true, version, size: header ?? positiveInt(info?.size), url });
+    // versionCode — APK ichida o'rnatilgan ilova bilan solishtirib "yangi versiya" ko'rsatish uchun
+    return c.json({ available: true, version, versionCode: positiveInt(info?.versionCode), size: header ?? positiveInt(info?.size), url });
   }
 
   // 2) Zaxira: R2 (app/hasharchilar.apk + custom metadata yoki app/version.json)
   const head = await c.env.PHOTOS.head(APK_KEY);
   let version = null;
+  let versionCode = null;
   if (head) {
     version = head.customMetadata?.version || null;
-    if (!version) {
+    versionCode = positiveInt(head.customMetadata?.versionCode);
+    if (!version || !versionCode) {
       const v = await c.env.PHOTOS.get(APK_VERSION_KEY);
       if (v) {
         try {
-          version = String((await v.json())?.version || '') || null;
+          const j = await v.json();
+          version = version || String(j?.version || '') || null;
+          versionCode = versionCode || positiveInt(j?.versionCode);
         } catch {
-          version = null;
+          /* buzilgan version.json */
         }
       }
     }
   }
-  return c.json({ available: Boolean(head), version, size: head ? head.size : null, url });
+  return c.json({ available: Boolean(head), version, versionCode, size: head ? head.size : null, url });
 });
 
 // GET /api/app/download — APK faylni oqim sifatida beradi (assets, zaxira — R2)

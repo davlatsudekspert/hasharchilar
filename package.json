@@ -12,7 +12,7 @@
     "build": "vite build",
     "db:local": "wrangler d1 migrations apply hasharchilar --local && wrangler d1 execute hasharchilar --local --file=seed.sql",
     "db:remote": "wrangler d1 migrations apply hasharchilar --remote --config wrangler.deploy.json",
-    "test:api": "node --test tests/api.test.mjs tests/admin.test.mjs tests/email.test.mjs",
+    "test:api": "node --test --test-concurrency=1 tests/api.test.mjs tests/admin.test.mjs tests/email.test.mjs",
     "test:storage": "node --test tests/storage.test.mjs",
     "deploy": "vite build && wrangler deploy --config wrangler.deploy.json",
     "android:sync": "vite build && cap sync android",

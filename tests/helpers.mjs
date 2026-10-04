@@ -57,9 +57,11 @@ export const PNG_BEFORE = makePng(4, 3, [120, 113, 108]);
 export const PNG_AFTER = makePng(4, 3, [5, 150, 105]);
 
 /** fetch o'rami: JSON/FormData, token va IP. */
-export async function api(path, { method = 'GET', token, ip, json, form, headers = {} } = {}) {
+export async function api(path, { method = 'GET', token, ip, json, form, headers = {}, oldClient = false } = {}) {
   const h = { 'cf-connecting-ip': ip || randomIp(), ...headers };
   if (token) h.authorization = `Bearer ${token}`;
+  // v3 mijoz (src/lib/api.js) kabi `?client=3`; oldClient — belgisiz eski v2 APK
+  if (token && !oldClient) path += `${path.includes('?') ? '&' : '?'}client=3`;
   let body;
   if (json !== undefined) {
     h['content-type'] = 'application/json';

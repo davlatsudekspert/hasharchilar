@@ -12,14 +12,16 @@ export default defineConfig({
     target: 'es2019',
     cssTarget: 'chrome87',
     sourcemap: false,
-    // MapLibre GL (~1 MB) — alohida lazy chunk, faqat xarita ochilganda yuklanadi
+    // MapLibre GL (~1 MB) dinamik import('./HasharMap.jsx') va h.k. orqali o'zi alohida lazy chunk bo'ladi.
+    // manualChunks QO'YILMASIN: Rollup umumiy CommonJS yordamchisini o'sha chunk'ga joylab, kirish chunk'i
+    // uni statik import qiladi — natijada har sahifa (bosh sahifa, admin) MapLibre'ni yuklab, ishga tushiradi.
+    // CI (deploy.yml) dist/index.html va kirish chunk'ida MapLibre yo'qligini tekshiradi.
     chunkSizeWarningLimit: 1100,
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          if (id.includes('node_modules/maplibre-gl')) return 'maplibre';
-          return undefined;
-        },
+        // Faqat nom: MapLibre bor chunk "maplibre-*.js" deb ataladi (bo'linishga ta'sir qilmaydi)
+        chunkFileNames: (chunk) =>
+          chunk.moduleIds.some((id) => id.includes('/node_modules/maplibre-gl/')) ? 'assets/maplibre-[hash].js' : 'assets/[name]-[hash].js',
       },
     },
   },

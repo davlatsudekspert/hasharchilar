@@ -1,6 +1,6 @@
 // Kichik xarita: bitta pin (hashar sahifasi). Statik (interaktiv emas) — sahifa aylantirishga xalaqit bermaydi.
 import { useEffect, useRef } from 'react';
-import { COLORS, createMap, maplibregl, pinElement, styleUrl } from '../../lib/map.js';
+import { COLORS, createMap, maplibregl, pinElement, setMapStyle } from '../../lib/map.js';
 import { useTheme } from '../../lib/theme.jsx';
 import { cx } from '../../lib/utils.js';
 import MapAttribution from './MapAttribution.jsx';
@@ -28,7 +28,7 @@ export default function MiniMap({ lat, lng, status = 'PENDING', className, zoom 
   useEffect(() => {
     if (!mapRef.current || darkRef.current === dark) return;
     darkRef.current = dark;
-    mapRef.current.setStyle(styleUrl(dark));
+    setMapStyle(mapRef.current, dark);
   }, [dark]);
 
   return (

@@ -78,7 +78,7 @@ export default function UserPage({ route }) {
         {hashars.length === 0 ? (
           <EmptyState title="Hali hashar e'lon qilmagan" text={`${p.name.split(' ')[0]} hozircha faqat qatnashuvchi sifatida faol.`} />
         ) : (
-          <ul className="grid gap-3 lg:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
             {hashars.map((h) => (
               <li key={h.id}>
                 <HasharRow hashar={h} />

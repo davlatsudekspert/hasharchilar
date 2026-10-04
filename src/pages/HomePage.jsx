@@ -29,7 +29,7 @@ import { CATEGORIES } from '../lib/meta.js';
 import { hideSplash } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
 import { useApi } from '../lib/store.js';
-import { cx, formatDay, sortHashars } from '../lib/utils.js';
+import { cx, formatDay, isOverdue, sortHashars } from '../lib/utils.js';
 
 function useCountUp(target, ms = 900) {
   const [v, setV] = useState(0);
@@ -69,10 +69,10 @@ function HeroVisual({ next }) {
       <div className="float-slow absolute left-6 top-4 w-[300px] overflow-hidden rounded-[28px] bg-white shadow-2xl ring-1 ring-black/5 dark:bg-slate-900">
         <div className="relative h-40">
           <Thumb hashar={h} prefer="before" className="h-full w-full" iconClass="h-16 w-16" />
-          <CategoryChip category={h.category} className="absolute left-3 top-3 bg-white/95 text-slate-800 shadow-sm" />
+          <CategoryChip category={h.category} className="absolute left-3 top-3 bg-white/95 text-slate-800 shadow-sm dark:bg-slate-950/80 dark:text-white" />
         </div>
       <div className="p-4">
-          <p className="line-clamp-2 font-display text-[17px] font-extrabold leading-snug text-slate-900 dark:text-white">{h.title}</p>
+          <p className="line-clamp-2 font-display text-[17px] font-extrabold leading-snug text-slate-900 [overflow-wrap:anywhere] dark:text-white">{h.title}</p>
           <p className="mt-1 flex items-center gap-1.5 truncate text-sm text-slate-500">
             <PinIcon className="h-4 w-4 shrink-0" /> <span className="truncate">{h.address || 'Toshkent'}</span>
           </p>
@@ -156,7 +156,8 @@ export default function HomePage({ appInfo }) {
   }, [list.loading]);
 
   const all = list.data || [];
-  const upcoming = useMemo(() => all.filter((h) => h.status === 'PENDING').slice(0, 10), [all]);
+  // Faqat kelgusi (va hozir bo'layotgan) hasharlar — sanasi o'tib, yakunlanmay qolganlar bu yerda ko'rsatilmaydi
+  const upcoming = useMemo(() => all.filter((h) => h.status === 'PENDING' && !isOverdue(h)).slice(0, 10), [all]);
   const completed = useMemo(() => all.filter((h) => h.status === 'COMPLETED' && h.before_url && h.after_url), [all]);
   const counts = useMemo(() => {
     const c = {};
@@ -164,6 +165,8 @@ export default function HomePage({ appInfo }) {
     return c;
   }, [all]);
   const s = stats.data || {};
+  // Tumanlar soni 0 bo'lsa (deploydan so'ng hali hech kim profilida tuman kiritmagan) — kutilayotganlar ko'rsatiladi
+  const showDistricts = s.districts > 0;
   const showcase = completed[0];
   const leaders = Array.isArray(top.data) ? top.data.slice(0, 5) : [];
 
@@ -201,7 +204,7 @@ export default function HomePage({ appInfo }) {
               <HeroStat value={stats.data ? s.hashars ?? 0 : null} label="Hasharlar" icon={SparklesIcon} />
               <HeroStat value={stats.data ? s.completed ?? 0 : null} label="Bajarildi" icon={CheckCircleIcon} />
               <HeroStat value={stats.data ? s.volunteers ?? 0 : null} label="Ko'ngillilar" icon={UsersIcon} />
-              <HeroStat value={stats.data ? s.districts ?? s.upcoming ?? upcoming.length : null} label={s.districts != null ? 'Tumanlar' : 'Kutilmoqda'} icon={PinIcon} />
+              <HeroStat value={stats.data ? (showDistricts ? s.districts : s.upcoming ?? upcoming.length) : null} label={showDistricts ? 'Tumanlar' : 'Kutilmoqda'} icon={PinIcon} />
             </div>
           </div>
           <div className="hidden lg:block">
@@ -307,7 +310,7 @@ export default function HomePage({ appInfo }) {
               </p>
               {showcase && (
                 <div className="mt-5 rounded-2xl bg-surface-2 p-4 ring-1 ring-line">
-                  <p className="font-display font-extrabold text-ink">{showcase.title}</p>
+                  <p className="font-display font-extrabold text-ink [overflow-wrap:anywhere]">{showcase.title}</p>
                   <p className="mt-1 text-sm text-ink-3">
                     {showcase.address} · {formatDay(showcase.completed_at || showcase.date_time)} · {showcase.volunteer_count} ko'ngilli
                   </p>
@@ -374,8 +377,9 @@ export default function HomePage({ appInfo }) {
                   </div>
                   <div className="min-w-0">
                     <p className="truncate font-bold text-ink">{r.user.name}</p>
+                    {/* joined — o'zi tashkil qilganlarisiz; jami hasharlar = qatnashgan + tashkil qilgan */}
                     <p className="text-xs font-semibold text-ink-3">
-                      {r.score} ball · {r.joined} hashar
+                      {r.score} ball · {(r.joined || 0) + (r.created || 0)} hashar
                     </p>
                   </div>
                 </Link>

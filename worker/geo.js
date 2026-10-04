@@ -1,9 +1,10 @@
 // Manzil qidirish va koordinata → manzil: Nominatim (OpenStreetMap) proksisi, DB keshi bilan.
-// Nominatim qoidalari: ≤ 1 so'rov/soniya, aniq User-Agent — shuning uchun mijozlar to'g'ridan-to'g'ri emas,
-// faqat shu yer orqali murojaat qiladi; javoblar geo_cache da 30 kun saqlanadi, IP bo'yicha 30/daqiqa limit.
+// Nominatim qoidalari: ≤ 1 so'rov/soniya (butun ilova uchun), aniq User-Agent — shuning uchun mijozlar to'g'ridan-to'g'ri
+// emas, faqat shu yer orqali murojaat qiladi; javoblar geo_cache da 30 kun saqlanadi, IP bo'yicha 30/daqiqa limit,
+// keshda yo'q so'rovlar esa umumiy navbatdan (upstreamGate: ≥ 1.1 s oraliq, barcha foydalanuvchilar uchun) o'tadi.
 // Testlar tarmoqqa chiqmaydi: env.GEO_MOCK === '1' bo'lsa deterministik soxta javoblar (fakeUpstream).
 import { Hono } from 'hono';
-import { limitGeo } from './ratelimit.js';
+import { limitGeo, upstreamGate } from './ratelimit.js';
 import { HttpError, ValidationError, charLength, cleanLine } from './validate.js';
 
 const NOMINATIM = 'https://nominatim.openstreetmap.org';
@@ -12,6 +13,9 @@ const CACHE_TTL_SEC = 30 * 24 * 3600;
 const UPSTREAM_TIMEOUT_MS = 8000;
 const RESULTS_MAX = 6;
 const UPSTREAM_ERROR = 'Manzil xizmati vaqtincha ishlamayapti';
+// Umumiy navbat: upstream'ga ikki so'rov orasida kamida 1.1 s; navbat 3 s da kelmasa — 503
+const UPSTREAM_GATE = { gapMs: 1100, waitMs: 3000, message: "Manzil xizmati band. Bir necha soniyadan so'ng qayta urinib ko'ring" };
+const UPSTREAM_GATE_KEY = 'geo-upstream';
 
 // ---------- Kiruvchi qiymatlar ----------
 
@@ -162,6 +166,8 @@ async function cached(c, key, load) {
     c.header('x-geo-cache', 'hit');
     return hit;
   }
+  // Keshda yo'q — upstream'ga (mock rejimida ham: xatti-harakat bir xil va testlanadi) faqat navbat bilan
+  await upstreamGate(db, UPSTREAM_GATE_KEY, UPSTREAM_GATE);
   let value;
   try {
     value = await load();

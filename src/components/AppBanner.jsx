@@ -1,7 +1,8 @@
-// APK ma'lumoti (/api/app) va saytdagi "Android ilovani yuklab olish" banneri.
+// APK ma'lumoti (/api/app): saytda "Android ilovani yuklab olish" banneri, APK ichida — "Yangi versiya" banneri.
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.js';
 import { IS_NATIVE, mediaUrl } from '../lib/config.js';
+import { nativeBuild } from '../lib/native.js';
 import { storage } from '../lib/storage.js';
 import { DownloadIcon, SmartphoneIcon, XIcon } from './icons.jsx';
 
@@ -12,7 +13,7 @@ let cached;
 export function useAppInfo() {
   const [info, setInfo] = useState(cached || null);
   useEffect(() => {
-    if (IS_NATIVE || cached) return undefined;
+    if (cached) return undefined;
     let alive = true;
     api
       .appInfo()
@@ -30,11 +31,26 @@ export function useAppInfo() {
 
 export const appDownloadUrl = (info) => mediaUrl((info && info.url) || '/api/app/download');
 
-/** Faqat telefon brauzerida ko'rinadigan ixcham banner. */
+/** APK: o'rnatilgan versiyadan yangisi bormi (serverdagi versionCode > App.getInfo().build). */
+function useUpdateAvailable(info) {
+  const [build, setBuild] = useState(null);
+  useEffect(() => {
+    if (!IS_NATIVE) return undefined;
+    let alive = true;
+    nativeBuild().then((b) => alive && setBuild(b));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return !!(info && build && info.versionCode && info.versionCode > build);
+}
+
+/** Saytda — faqat telefon brauzerida ko'rinadigan ixcham banner; APK'da — faqat yangi versiya chiqqanda. */
 export default function AppBanner({ info }) {
   const [dismissed, setDismissed] = useState(() => storage.get(DISMISS_KEY));
-  if (IS_NATIVE || !info) return null;
-  const versionKey = info.version || '1';
+  const update = useUpdateAvailable(info);
+  if (!info || (IS_NATIVE && !update)) return null;
+  const versionKey = (IS_NATIVE ? 'native-' : '') + (info.version || '1');
   if (dismissed === versionKey) return null;
   const dismiss = () => {
     storage.set(DISMISS_KEY, versionKey);
@@ -48,15 +64,16 @@ export default function AppBanner({ info }) {
           <SmartphoneIcon className="h-5 w-5" />
         </span>
         <div className="min-w-0 flex-1 leading-tight">
-          <p className="truncate text-sm font-bold">Android ilovasi</p>
-          {meta && <p className="truncate text-xs text-emerald-100">{meta} · bepul</p>}
+          <p className="truncate text-sm font-bold">{IS_NATIVE ? 'Yangi versiya' : 'Android ilovasi'}</p>
+          {meta && <p className="truncate text-xs text-emerald-100">{IS_NATIVE ? meta : `${meta} · bepul`}</p>}
         </div>
+        {/* APK'da tashqi havola tizim brauzerida ochiladi (Capacitor) — yuklab olish o'sha yerda */}
         <a
           href={appDownloadUrl(info)}
-          download="hasharchilar.apk"
+          download={IS_NATIVE ? undefined : 'hasharchilar.apk'}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-white px-3 py-1.5 text-sm font-bold text-emerald-800 hover:bg-emerald-50"
         >
-          <DownloadIcon className="h-4 w-4" /> Yuklash
+          <DownloadIcon className="h-4 w-4" /> {IS_NATIVE ? 'Yangilash' : 'Yuklash'}
         </a>
         <button type="button" onClick={dismiss} aria-label="Bannerni yopish" className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-emerald-100 hover:bg-white/10">
           <XIcon className="h-4 w-4" />

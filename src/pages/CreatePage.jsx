@@ -25,11 +25,12 @@ import { needsEmailVerify, useActions } from '../lib/actions.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { CATEGORIES } from '../lib/meta.js';
-import { haptic } from '../lib/native.js';
+import { registerBackHandler } from '../lib/modals.js';
+import { haptic, onRestoredPhoto, peekRestoredPhoto } from '../lib/native.js';
 import { goBack, navigate } from '../lib/router.js';
 import { storage } from '../lib/storage.js';
 import { invalidate, prime } from '../lib/store.js';
-import { cx, formatDateLong, tashkentNow, tashkentTomorrow } from '../lib/utils.js';
+import { cx, formatDateLong, TASHKENT, tashkentNow, tashkentTomorrow } from '../lib/utils.js';
 
 const SUGGESTED_ITEMS = ["Qo'lqop", 'Belkurak', 'Axlat qoplari', 'Supurgi', "Ko'chat", 'Chelak', "Bo'yoq", "Cho'tka", 'Suv', 'Tirma', 'Etik'];
 const STEPS = [
@@ -40,6 +41,7 @@ const STEPS = [
 ];
 const LIMITS = { title: 120, description: 1000, address: 200, items: 12, item: 40 };
 const DRAFT_KEY = 'hashar_create_draft';
+const PHOTO_TAG = 'create';
 const TIMES = ['07:00', '08:00', '09:00', '10:00', '15:00', '16:00', '17:00'];
 
 function Counter({ value, max }) {
@@ -54,14 +56,19 @@ function FieldError({ children }) {
   );
 }
 
+// Eski qoralamalarda xarita tegilmasa ham Toshkent markazi (va uning avtomatik manzili) saqlanib qolardi
+const isDefaultCentre = (l) => !!l && l.lat === TASHKENT.lat && l.lng === TASHKENT.lng;
+
 const initial = () => {
   const d = storage.getJSON(DRAFT_KEY, null) || {};
+  const legacy = isDefaultCentre(d.location);
+  const location = !legacy && d.location && Number.isFinite(d.location.lat) && Number.isFinite(d.location.lng) ? d.location : null;
   return {
     category: d.category || 'cleaning',
     title: d.title || '',
     description: d.description || '',
-    address: d.address || '',
-    location: d.location || null,
+    address: legacy ? '' : d.address || '',
+    location,
     date: d.date && d.date >= tashkentNow().slice(0, 10) ? d.date : tashkentTomorrow(),
     time: d.time || '09:00',
     max: d.max ?? null,
@@ -114,6 +121,19 @@ export default function CreatePage() {
     window.scrollTo({ top: 0 });
   }, [step]);
 
+  // Android "orqaga": sahifadan chiqmasdan oldingi qadamga (ekrandagi "Orqaga" kabi)
+  useEffect(() => {
+    if (step === 0) return undefined;
+    return registerBackHandler(() => (setStep((s) => Math.max(0, s - 1)), true));
+  }, [step]);
+
+  // APK: OS kamera paytida ilovani o'ldirgan bo'lsa — rasm qadamiga qaytamiz (PhotoInput suratni oladi)
+  useEffect(() => {
+    const check = () => peekRestoredPhoto(PHOTO_TAG) && setStep(STEPS.length - 1);
+    check();
+    return onRestoredPhoto(check);
+  }, []);
+
   const set = (k) => (e) => setF((s) => ({ ...s, [k]: e.target.value }));
   const toggleItem = (it) =>
     setF((s) => {
@@ -137,7 +157,7 @@ export default function CreatePage() {
       if (f.description.length > LIMITS.description) e.description = 'Tavsif juda uzun';
     }
     if (i === 1) {
-      if (!f.location) e.location = 'Xaritada joyni belgilang';
+      if (!f.location) e.location = "Joy tanlanmagan: xaritani surib pinni joyga keltiring yoki manzilni qidiring";
       if (f.address.length > LIMITS.address) e.address = 'Manzil juda uzun';
     }
     if (i === 2) {
@@ -279,19 +299,21 @@ export default function CreatePage() {
                           setF((s) => ({ ...s, category: c.id }));
                         }}
                         className={cx(
-                          'relative flex items-start gap-3 rounded-2xl p-3.5 text-left transition',
+                          // Telefonda: ikonka tepada, nom pastda (tor ustunda so'z bo'linmasin); sm+ — yonma-yon + tavsif
+                          'relative flex flex-col items-start gap-2.5 rounded-2xl p-3.5 text-left transition active:scale-[0.98] sm:flex-row sm:gap-3',
                           active ? 'bg-brand-soft ring-2 ring-emerald-500' : 'bg-surface-2 ring-1 ring-line hover:ring-line-strong',
                         )}
                       >
-                        <span className={cx('grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white', c.tint)}>
+                        <span className={cx('grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-sm', c.tint)}>
                           <Icon className="h-5 w-5" />
                         </span>
-                        <span className="min-w-0">
-                          <span className="block text-sm font-extrabold leading-tight text-ink [overflow-wrap:anywhere]">{c.label}</span>
+                        <span className="min-w-0 sm:pr-6">
+                          {/* Faqat yumshoq tire (&shy;) joyida bo'linadi — harf o'rtasida emas */}
+                          <span className="block text-sm font-extrabold leading-tight text-ink [hyphens:manual]">{c.label}</span>
                           <span className="mt-0.5 hidden text-xs leading-snug text-ink-3 sm:block">{c.text}</span>
                         </span>
                         {active && (
-                          <span className="absolute right-2 top-2 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-white">
+                          <span className="absolute right-2.5 top-2.5 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-white shadow-sm">
                             <CheckIcon className="h-3 w-3" strokeWidth={3.5} />
                           </span>
                         )}
@@ -345,10 +367,15 @@ export default function CreatePage() {
                 <p className={labelCls}>Xaritada joyni belgilang</p>
                 <LocationPicker
                   value={f.location}
-                  onChange={(p) => setF((s) => ({ ...s, location: p }))}
+                  onChange={(p) => {
+                    setF((s) => ({ ...s, location: p }));
+                    // joy tanlandi — eski "Joy tanlanmagan" xatosi qolib ketmasin
+                    if (p) setErrors((er) => (er.location ? { ...er, location: undefined } : er));
+                  }}
                   onReverse={(r) => {
                     if (r && r.display && autoAddress.current) setF((s) => ({ ...s, address: String(r.display).slice(0, LIMITS.address) }));
                   }}
+                  wantAddress={() => autoAddress.current}
                 />
                 <FieldError>{errors.location}</FieldError>
               </div>
@@ -506,6 +533,7 @@ export default function CreatePage() {
                   value={f.photo}
                   onChange={(p) => setF((s) => ({ ...s, photo: p }))}
                   onBusyChange={setPhotoBusy}
+                  restoreTag={PHOTO_TAG}
                   title="Joyning hozirgi holatini suratga oling"
                   hint="Hashar yakunlangach 'Keyin' rasmi bilan solishtiriladi"
                 />
@@ -562,11 +590,11 @@ export default function CreatePage() {
             <div className="relative aspect-[16/10]">
               {photoUrl ? <img src={photoUrl} alt="" className="h-full w-full object-cover" /> : <Thumb hashar={preview} className="h-full w-full" iconClass="h-14 w-14" />}
               <div className="absolute left-3 top-3">
-                <CategoryChip category={f.category} short className="bg-white/95 text-slate-800 shadow-sm" />
+                <CategoryChip category={f.category} short className="bg-white/95 text-slate-800 shadow-sm dark:bg-slate-950/80 dark:text-white" />
               </div>
             </div>
             <div className="p-4">
-              <p className="line-clamp-2 font-display text-[17px] font-extrabold leading-snug text-ink">{f.title || 'Hashar nomi'}</p>
+              <p className="line-clamp-2 font-display text-[17px] font-extrabold leading-snug text-ink [overflow-wrap:anywhere]">{f.title || 'Hashar nomi'}</p>
               <p className="mt-1.5 flex items-center gap-1.5 truncate text-sm text-ink-3">
                 <PinIcon className="h-4 w-4 shrink-0" /> <span className="truncate">{f.address || 'Manzil'}</span>
               </p>

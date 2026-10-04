@@ -29,6 +29,25 @@ export function registerModal(close) {
 
 export const modalDepth = () => stack.length;
 
+// Android "orqaga" uchun sahifa ichki holati (wizard qadami, ochiq sheet): fn() true qaytarsa — ishlov berildi
+const backStack = [];
+/** Eng oxirgi ro'yxatdan o'tgandan boshlab chaqiradi; biri true qaytarsa — true. */
+export function runBackHandlers() {
+  for (let i = backStack.length - 1; i >= 0; i--) {
+    if (backStack[i].fn()) return true;
+  }
+  return false;
+}
+/** Qaytadi — ro'yxatdan chiqarish. `fn` ref orqali yangilanishi mumkin (har renderda qayta ro'yxat shart emas). */
+export function registerBackHandler(fn) {
+  const entry = { fn };
+  backStack.push(entry);
+  return () => {
+    const i = backStack.indexOf(entry);
+    if (i !== -1) backStack.splice(i, 1);
+  };
+}
+
 if (typeof document !== 'undefined') {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && stack.length > 0) {

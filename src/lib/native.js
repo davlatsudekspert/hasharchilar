@@ -2,8 +2,9 @@
 // Plaginlar dinamik import qilinadi — sayt bundle'iga faqat kerak bo'lganda yuklanadi.
 import { SystemBars, SystemBarsStyle } from '@capacitor/core';
 import { IS_NATIVE } from './config.js';
-import { closeTopModal } from './modals.js';
+import { closeTopModal, runBackHandlers } from './modals.js';
 import { getRoute, goBack } from './router.js';
+import { storage } from './storage.js';
 
 // ---------------- Ishga tushirish ----------------
 export async function initNative() {
@@ -11,14 +12,54 @@ export async function initNative() {
   document.documentElement.classList.add('is-native');
   try {
     const { App } = await import('@capacitor/app');
-    // Orqaga: modal → sahifa tarixi → ilovadan chiqish
+    // Orqaga: modal → sahifa ichki holati (wizard qadami, ochiq sheet) → sahifa tarixi → ilovadan chiqish
     await App.addListener('backButton', () => {
       if (closeTopModal()) return;
+      if (runBackHandlers()) return;
       if (getRoute().name === 'home') App.exitApp();
       else goBack('/');
     });
+    // OS kamera paytida ilovani o'ldirgan bo'lsa — surat shu hodisa bilan qaytadi
+    await App.addListener('appRestoredResult', (r) => {
+      restorePhoto(r).catch(() => {});
+    });
   } catch (err) {
-    console.warn('backButton', err);
+    console.warn('App listeners', err);
+  }
+  watchKeyboard();
+}
+
+// ---------------- Klaviatura ----------------
+// APK'da klaviatura ochilganda WebView kichrayadi (SystemBars IME inset) va fixed pastki panellar
+// klaviatura ustiga chiqib, maydonni yopadi. Shunda html.kb-open → tab bar va action bar yashiriladi.
+const TEXT_INPUT = /^(text|search|email|tel|url|password|number|date|time|datetime-local|month|week)$/i;
+const isEditable = (el) =>
+  !!el && (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && TEXT_INPUT.test(el.type || 'text')));
+
+function watchKeyboard() {
+  const root = document.documentElement;
+  const full = {}; // kenglik (orientatsiya) → klaviaturasiz eng katta balandlik
+  const update = () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    full[w] = Math.max(full[w] || 0, h);
+    root.classList.toggle('kb-open', isEditable(document.activeElement) && full[w] - h > 120);
+  };
+  update();
+  window.addEventListener('resize', update);
+  document.addEventListener('focusin', () => setTimeout(update, 60));
+  document.addEventListener('focusout', () => setTimeout(update, 60));
+}
+
+/** O'rnatilgan APK versionCode (App.getInfo().build) yoki null. */
+export async function nativeBuild() {
+  if (!IS_NATIVE) return null;
+  try {
+    const { App } = await import('@capacitor/app');
+    const n = Number((await App.getInfo()).build);
+    return Number.isSafeInteger(n) && n > 0 ? n : null;
+  } catch {
+    return null;
   }
 }
 
@@ -60,7 +101,8 @@ export async function haptic(kind = 'light') {
   if (!IS_NATIVE) return;
   try {
     const { Haptics, ImpactStyle, NotificationType } = await import('@capacitor/haptics');
-    if (kind === 'select') return void (await Haptics.selectionChanged().catch(() => {}));
+    // Android'da selectionChanged() faqat selectionStart() dan keyin tebranadi — yengil impact ishlatamiz
+    if (kind === 'select') return void (await Haptics.impact({ style: ImpactStyle.Light }));
     if (kind === 'success' || kind === 'warning' || kind === 'error') {
       const type = { success: NotificationType.Success, warning: NotificationType.Warning, error: NotificationType.Error }[kind];
       return void (await Haptics.notification({ type }));
@@ -177,24 +219,86 @@ export async function getCurrentPosition() {
 /** Native kamera mavjudmi (web'da fayl input ishlatiladi). */
 export const HAS_NATIVE_CAMERA = IS_NATIVE;
 
-/** Native kamera bilan surat oladi → File. Bekor qilinsa null. */
-export async function takeNativePhoto() {
-  const { Camera } = await import('@capacitor/camera');
+/** Kamera xatosi turi: 'denied' (ruxsat yo'q) | 'unavailable' (plagin yo'q) | 'failed'. */
+export class CameraError extends Error {
+  constructor(kind, message) {
+    super(message || kind);
+    this.kind = kind;
+  }
+}
+
+export const CAMERA_DENIED_MESSAGE =
+  "Kameraga ruxsat berilmadi. Telefon Sozlamalari → Ilovalar → Hasharchilar → Ruxsatlar bo'limida kamerani yoqing yoki «Galereya» dan tanlang.";
+
+const PENDING_KEY = 'hashar_camera_pending';
+
+/**
+ * Native kamera bilan surat oladi → File. Bekor qilinsa null. Xato — CameraError.
+ * @param {string} [tag] — qaysi forma uchun (OS ilovani o'ldirsa, surat shu formaga qaytariladi)
+ */
+export async function takeNativePhoto(tag) {
+  let Camera;
+  try {
+    ({ Camera } = await import('@capacitor/camera'));
+  } catch {
+    throw new CameraError('unavailable', "Kamerani ochib bo'lmadi");
+  }
   let perm = await Camera.checkPermissions().catch(() => null);
   if (perm && perm.camera !== 'granted') {
     perm = await Camera.requestPermissions({ permissions: ['camera'] }).catch(() => null);
-    if (perm && perm.camera === 'denied') throw new Error('Kameraga ruxsat berilmadi. Sozlamalardan ruxsat bering.');
+    if (perm && perm.camera !== 'granted') throw new CameraError('denied', CAMERA_DENIED_MESSAGE);
   }
+  if (tag) storage.setJSON(PENDING_KEY, { tag, hash: window.location.hash, at: Date.now() });
   try {
     const res = await Camera.takePhoto({ quality: 85, targetWidth: 1600, targetHeight: 1600, correctOrientation: true, saveToGallery: false });
-    const src = res.webPath || res.uri;
-    if (!src) return null;
-    const blob = await (await fetch(src)).blob();
-    return new File([blob], `rasm-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+    return await photoFile(res);
   } catch (err) {
-    if (/cancel/i.test(String(err && err.message))) return null;
-    throw new Error('Kamerani ochib bo\'lmadi');
+    const msg = String((err && err.message) || '');
+    if (/cancel/i.test(msg)) return null;
+    if (/denied|permission/i.test(msg)) throw new CameraError('denied', CAMERA_DENIED_MESSAGE);
+    throw new CameraError('failed', "Kamerani ochib bo'lmadi");
+  } finally {
+    storage.remove(PENDING_KEY);
   }
+}
+
+/** takePhoto natijasi (webPath/uri) → File yoki null. */
+async function photoFile(res) {
+  const src = res && (res.webPath || res.uri);
+  if (!src) return null;
+  const blob = await (await fetch(src)).blob();
+  return new File([blob], `rasm-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
+}
+
+// ---------------- Tiklangan surat (appRestoredResult) ----------------
+let restored = null; // { tag, file }
+const restoredSubs = new Set();
+
+async function restorePhoto(r) {
+  if (!r || r.pluginId !== 'Camera') return;
+  const pending = storage.getJSON(PENDING_KEY, null);
+  storage.remove(PENDING_KEY);
+  // 30 daqiqadan eski belgi — boshqa seans qoldig'i
+  if (!r.success || !pending || !pending.tag || Date.now() - (pending.at || 0) > 30 * 60000) return;
+  const file = await photoFile(r.data);
+  if (!file) return;
+  restored = { tag: pending.tag, file };
+  if (pending.hash && pending.hash !== window.location.hash) window.location.hash = pending.hash;
+  restoredSubs.forEach((cb) => cb());
+}
+
+/** Shu forma uchun tiklangan surat bormi (olib qo'ymaydi). */
+export const peekRestoredPhoto = (tag) => (restored && restored.tag === tag ? restored.file : null);
+/** Tiklangan suratni oladi (bir marta). */
+export function takeRestoredPhoto(tag) {
+  const f = peekRestoredPhoto(tag);
+  if (f) restored = null;
+  return f;
+}
+/** Surat tiklanganda chaqiriladi; qaytadi — obunani bekor qilish. */
+export function onRestoredPhoto(cb) {
+  restoredSubs.add(cb);
+  return () => restoredSubs.delete(cb);
 }
 
 // ---------------- Tarmoq ----------------

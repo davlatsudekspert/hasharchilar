@@ -33,6 +33,18 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{43}$/; // 32 bayt base64url
 const enc = new TextEncoder();
 export const BLOCKED_MESSAGE = 'Hisobingiz bloklangan';
 export const EMAIL_UNVERIFIED_MESSAGE = 'Avval emailingizni tasdiqlang';
+// v3+ mijozlar (sayt va APK) kirgan so'rovlarda `?client=<n>` query yuboradi (`X-Client: hasharchilar/<n>`
+// sarlavhasi ham qabul qilinadi). Belgisiz (eski v2 APK) mijozda email tasdiqlash oynasi yo'q — unga
+// "ilovani yangilang" deyiladi. Query — CORS preflight o'zgarmasin: yangi APK eski worker bilan ham ishlaydi.
+const APP_UPDATE_MESSAGE = "Ilovani yangilang: yangi versiyada emailni tasdiqlab, hasharlarda qatnashishingiz mumkin";
+const CLIENT_RE = /^hasharchilar\/(\d+)/i;
+const CLIENT_QUERY_RE = /^\d{1,4}$/;
+/** So'rov yuborgan mijoz versiyasi (?client= yoki X-Client) yoki 0 (eski mijoz). */
+export const clientVersion = (c) => {
+  const q = c.req.query('client') || '';
+  if (CLIENT_QUERY_RE.test(q)) return Number(q);
+  return Number(CLIENT_RE.exec(c.req.header('x-client') || '')?.[1]) || 0;
+};
 const EMAIL_REQUIRED_MESSAGE = "Ilovani yangilang: ro'yxatdan o'tish endi email orqali";
 const PHONE_TAKEN = "Bu telefon raqami allaqachon ro'yxatdan o'tgan";
 const EMAIL_TAKEN = "Bu email allaqachon boshqa hisobga bog'langan";
@@ -215,6 +227,7 @@ export async function requireAuth(c, next) {
 export async function requireVerifiedEmail(c, next) {
   await requireAuth(c, async () => {
     if (emailEnabled(c.env) && !c.get('user').email_verified_at) {
+      if (clientVersion(c) < 3) throw new HttpError(403, APP_UPDATE_MESSAGE, null, 'app_update_required');
       throw new HttpError(403, EMAIL_UNVERIFIED_MESSAGE, null, 'email_unverified');
     }
     await next();

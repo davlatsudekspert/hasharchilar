@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { IS_NATIVE } from '../lib/config.js';
 import { compressImage } from '../lib/image.js';
-import { haptic, HAS_NATIVE_CAMERA, takeNativePhoto } from '../lib/native.js';
+import { haptic, HAS_NATIVE_CAMERA, onRestoredPhoto, takeNativePhoto, takeRestoredPhoto } from '../lib/native.js';
 import { cx } from '../lib/utils.js';
 import { CameraIcon, ImageIcon, RefreshIcon, TrashIcon } from './icons.jsx';
 import { Spinner } from './ui.jsx';
@@ -34,8 +34,9 @@ function FilePick({ capture, onPick, disabled, label, className, children }) {
  * @param {File|null} value
  * @param {(f: File|null) => void} onChange
  * @param {(busy: boolean) => void} [onBusyChange]
+ * @param {string} [restoreTag] — APK: OS kamera paytida ilovani o'ldirsa, surat shu belgi bo'yicha qaytariladi
  */
-export default function PhotoInput({ value, onChange, onBusyChange, title, hint, aspect = 'aspect-[4/3]', maxSide }) {
+export default function PhotoInput({ value, onChange, onBusyChange, title, hint, aspect = 'aspect-[4/3]', maxSide, restoreTag }) {
   const [preview, setPreview] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -81,14 +82,28 @@ export default function PhotoInput({ value, onChange, onBusyChange, title, hint,
   const nativeCamera = async () => {
     setError('');
     try {
-      const f = await takeNativePhoto();
+      const f = await takeNativePhoto(restoreTag);
       if (f) accept(f);
     } catch (err) {
+      // Ruxsat berilmagan — xabar; fayl tanlagichga o'tilmaydi (WebView yana ruxsat so'rab, jim rad etadi)
+      if (err.kind === 'denied' || !fallbackRef.current) setError(err.message);
       // Plagin ishlamasa — tizim fayl tanlagichi (kamera bilan)
-      if (fallbackRef.current) fallbackRef.current.click();
-      else setError(err.message);
+      else fallbackRef.current.click();
     }
   };
+
+  // Ilova qayta tiklangach (appRestoredResult) — kutilayotgan surat
+  const acceptRef = useRef(accept);
+  acceptRef.current = accept;
+  useEffect(() => {
+    if (!restoreTag) return undefined;
+    const check = () => {
+      const f = takeRestoredPhoto(restoreTag);
+      if (f) acceptRef.current(f);
+    };
+    check();
+    return onRestoredPhoto(check);
+  }, [restoreTag]);
 
   const onDrop = (e) => {
     e.preventDefault();

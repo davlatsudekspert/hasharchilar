@@ -491,12 +491,13 @@ describe("ro'yxat: 300+ eski PENDING bo'lsa ham kelgusi va bajarilganlar ko'rina
   });
 
   test('GET /api/hashars', async () => {
+    // stats ro'yxatdan OLDIN: oradagi yangi yakunlash faqat ro'yxatdagi sonni oshiradi (taqqoslash buzilmaydi)
+    const stats = (await api('/api/stats')).data;
     const r = await api('/api/hashars');
     assert.equal(r.status, 200);
     const list = r.data;
     assert.ok(list.length <= 300, `uzunlik ${list.length}`);
     assert.ok(list.some((x) => x.id === upcoming.id), "kelgusi hashar ro'yxatda");
-    const stats = (await api('/api/stats')).data;
     const completed = list.filter((x) => x.status === 'COMPLETED').length;
     assert.ok(completed >= Math.min(stats.completed, 60), `bajarilganlar: ${completed} / ${stats.completed}`);
     assert.ok(completed >= 1);
@@ -526,6 +527,22 @@ test('GET /api/stats', async () => {
   assert.ok(r.data.volunteers >= 2);
 });
 
+test("GET /api/stats: districts — bir tuman turli yozilsa (katta-kichik harf, apostrof, \"tumani\") bitta", async () => {
+  const districts = async () => (await api('/api/stats')).data.districts;
+  const setDistrict = async (district) => {
+    const u = await register('Tuman Tekshiruv');
+    const fd = new FormData();
+    fd.append('district', district);
+    const r = await api('/api/me/profile', { method: 'POST', token: u.token, form: fd });
+    assert.equal(r.status, 200, JSON.stringify(r.data));
+  };
+  const before = await districts();
+  for (const d of [`Tst${RUN} tumani`, `tst${RUN}`, `TST${RUN} Tuman`, `Qo'rg'on${RUN}`, `Qoʻrgʻon${RUN} tumani`, `Qo‘rg‘on${RUN}`]) {
+    await setDistrict(d);
+  }
+  assert.equal(await districts(), before + 2);
+});
+
 // APK: CI uni statik assets ichiga qo'yadi (dist/app/hasharchilar.apk + version.json).
 // Lokal server shu loyihaning dist/ papkasini beradi: fayl bo'lsa — "mavjud", bo'lmasa — "yo'q" tekshiriladi.
 const APP_DIR = fileURLToPath(new URL('../dist/app/', import.meta.url));
@@ -534,7 +551,7 @@ const LOCAL_APK = IS_LOCAL_SERVER && existsSync(`${APP_DIR}hasharchilar.apk`) ? 
 test("GET /api/app va /api/app/download (lokal: APK yo'q)", { skip: !IS_LOCAL_SERVER || LOCAL_APK ? "dist/app da APK bor yoki server lokal emas" : false }, async () => {
   const r = await api('/api/app');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.data, { available: false, version: null, size: null, url: '/api/app/download' });
+  assert.deepEqual(r.data, { available: false, version: null, versionCode: null, size: null, url: '/api/app/download' });
   const d = await api('/api/app/download');
   assert.equal(d.status, 404);
   assert.equal(typeof d.data.error, 'string', "404 — JSON xato (SPA index.html emas)");
@@ -545,7 +562,7 @@ test('GET /api/app va /api/app/download (statik assets: dist/app/hasharchilar.ap
   const info = JSON.parse(readFileSync(`${APP_DIR}version.json`, 'utf8'));
   const r = await api('/api/app');
   assert.equal(r.status, 200);
-  assert.deepEqual(r.data, { available: true, version: info.version, size: LOCAL_APK.length, url: '/api/app/download' });
+  assert.deepEqual(r.data, { available: true, version: info.version, versionCode: info.versionCode || null, size: LOCAL_APK.length, url: '/api/app/download' });
   const d = await api('/api/app/download');
   assert.equal(d.status, 200);
   assert.equal(d.headers.get('content-type'), 'application/vnd.android.package-archive');
@@ -785,6 +802,87 @@ describe("v3: ro'yxat filtrlari (category, from/to, near + radius_km)", () => {
       const r = await api(`/api/hashars?${qs}`);
       assert.equal(r.status, 400, qs);
     }
+  });
+});
+
+// Radius ichida 300 dan ko'p hashar: javob sana bo'yicha emas, masofa bo'yicha eng yaqin 300 ta bo'lishi kerak.
+// API orqali yaratiladi (D1 va DO rejimida ham ishlaydi): 31 foydalanuvchi × 10 ta (limit 10 / soat).
+describe("v3: near — radiusda 300+ hashar bo'lsa ham eng yaqinlari qaytadi", () => {
+  const tag = `nr${RUN}`;
+  const lat0 = Math.round((38.3 + Math.random()) * 1e4) / 1e4; // Toshkentdan uzoq, tasodifiy nuqta
+  const lng0 = Math.round((64.3 + Math.random()) * 1e4) / 1e4;
+  const FILL = 310;
+  const fill = []; // { id, token }: i-chisi markazdan 0.001 + i·0.00003 daraja (~111 m + i·3.3 m) shimolda
+  let target; // aynan markazda, eng kech sana (sana bo'yicha LIMIT bo'lsa birinchi tushib qoladigan)
+  const owners = [];
+  const near = async (qs) => {
+    const r = await api(`/api/hashars?q=${tag}&near=${lat0},${lng0}&${qs}`);
+    assert.equal(r.status, 200, `${qs}: ${JSON.stringify(r.data)}`);
+    return r.data;
+  };
+
+  before(async () => {
+    for (let u = 0; u < FILL / 10; u++) {
+      const owner = await register(`Yaqin ${u}`);
+      owners.push(owner);
+      for (let k = 0; k < 10; k++) {
+        const i = fill.length;
+        const r = await api('/api/hashars', {
+          method: 'POST',
+          token: owner.token,
+          form: hasharForm({ title: `Yaqin ${tag} ${i}`, lat: String(lat0 + 0.001 + i * 0.00003), lng: String(lng0), date_time: '2098-01-01T09:00' }, null),
+        });
+        assert.equal(r.status, 201, JSON.stringify(r.data));
+        fill.push({ id: r.data.id, token: owner.token });
+      }
+    }
+    const t = await register('Aynan Shu Yerda');
+    owners.push(t);
+    const r = await api('/api/hashars', {
+      method: 'POST',
+      token: t.token,
+      form: hasharForm({ title: `Aynan ${tag}`, lat: String(lat0), lng: String(lng0), date_time: '2099-12-31T09:00' }, null),
+    });
+    assert.equal(r.status, 201, JSON.stringify(r.data));
+    target = { id: r.data.id, token: t.token };
+    // Eng yaqin to'ldiruvchi — COMPLETED (holatlar aralash tartibi)
+    const fd = new FormData();
+    fd.append('photo', new Blob([PNG_AFTER], { type: 'image/png' }), 'keyin.png');
+    const done = await api(`/api/hashars/${fill[0].id}/complete`, { method: 'POST', token: fill[0].token, form: fd });
+    assert.equal(done.status, 200, JSON.stringify(done.data));
+  });
+
+  after(async () => {
+    for (const h of [target, ...fill.slice(1)]) if (h) await api(`/api/hashars/${h.id}`, { method: 'DELETE', token: h.token });
+  });
+
+  test('holat filtrisiz: 0 km dagi birinchi, keyin COMPLETED, aynan eng yaqin 300 ta', async () => {
+    const list = await near('radius_km=2');
+    assert.equal(list.length, 300);
+    assert.equal(list[0].id, target.id, `0 km dagi hashar birinchi: ${JSON.stringify(list[0])}`);
+    assert.equal(list[0].distance_km, 0);
+    assert.equal(list[1].id, fill[0].id);
+    assert.equal(list[1].status, 'COMPLETED');
+    assert.deepEqual(list.map((x) => x.id), [target.id, ...fill.slice(0, 299).map((h) => h.id)]);
+    const d = list.map((x) => x.distance_km);
+    assert.deepEqual(d, [...d].sort((a, b) => a - b), 'masofa bo\'yicha o\'sish');
+    // Standart radius (50 km) ham xuddi shu
+    assert.deepEqual((await near('')).map((x) => x.id), list.map((x) => x.id));
+  });
+
+  test('status=PENDING / COMPLETED', async () => {
+    const pend = await near('radius_km=2&status=PENDING');
+    assert.equal(pend.length, 300);
+    assert.deepEqual(pend.map((x) => x.id), [target.id, ...fill.slice(1, 300).map((h) => h.id)]);
+    const comp = await near('radius_km=2&status=COMPLETED');
+    assert.deepEqual(comp.map((x) => x.id), [fill[0].id]);
+  });
+
+  test('kichik radius: faqat radius ichidagilar', async () => {
+    const small = await near('radius_km=0.2');
+    // 0.2 km ≈ 0.0018 daraja: markaz + i ≤ 26 (0.001 + 26·0.00003 = 0.00178)
+    assert.deepEqual(small.map((x) => x.id), [target.id, ...fill.slice(0, 27).map((h) => h.id)]);
+    assert.ok(small.every((x) => x.distance_km <= 0.2));
   });
 });
 
@@ -1124,5 +1222,43 @@ describe('v3: geo proksi', () => {
     assert.equal(r.status, 429);
     assert.ok(Number(r.headers.get('retry-after')) > 0);
     assert.equal((await api(`/api/geo/search?q=${q}`)).status, 200, 'boshqa IP ga ta\'sir qilmaydi');
+  });
+
+  // Nominatim: butun ilova uchun ≤ 1 so'rov/soniya — IP limitidan tashqari keshda yo'q so'rovlar umumiy navbatdan o'tadi
+  test("umumiy navbat: keshda yo'q so'rovlar orasida ≥ 1.1 s (turli IP lar ham), 3 s da navbat kelmasa — 503", { skip: NEED_MOCK }, async () => {
+    const pause = () => new Promise((res) => setTimeout(res, 1300)); // oldingi so'rovlarning navbati bo'shasin
+    await pause();
+    const t0 = Date.now();
+    const three = await Promise.all([0, 1, 2].map((i) => api(`/api/geo/search?q=${encodeURIComponent(`Navbat ${RUN} ${i}`)}`)));
+    const elapsed = Date.now() - t0;
+    for (const r of three) {
+      assert.equal(r.status, 200, JSON.stringify(r.data));
+      assert.equal(r.headers.get('x-geo-cache'), 'miss');
+    }
+    assert.ok(elapsed >= 2000, `3 ta miss navbat bilan (≥ 2.2 s) o'tishi kerak edi: ${elapsed} ms`);
+
+    // Kesh hit'i navbat kutmaydi
+    const t1 = Date.now();
+    const hit = await api(`/api/geo/search?q=${encodeURIComponent(`Navbat ${RUN} 1`)}`);
+    assert.equal(hit.headers.get('x-geo-cache'), 'hit');
+    assert.ok(Date.now() - t1 < 1000, `hit ${Date.now() - t1} ms`);
+
+    // Bir vaqtda 6 ta yangi so'z: 3 s ichida ko'pi bilan 3 tasi navbatga ulguradi, qolganlari 503 (Retry-After)
+    await pause();
+    const burst = await Promise.all([0, 1, 2, 3, 4, 5].map((i) => api(`/api/geo/search?q=${encodeURIComponent(`Tirband ${RUN} ${i}`)}`)));
+    const ok = burst.filter((r) => r.status === 200);
+    const busy = burst.filter((r) => r.status === 503);
+    assert.equal(ok.length + busy.length, 6, JSON.stringify(burst.map((r) => [r.status, r.data])));
+    assert.ok(ok.length >= 1 && ok.length <= 3, `navbatdan o'tganlar: ${ok.length}`);
+    for (const r of busy) {
+      assert.equal(r.data.error, "Manzil xizmati band. Bir necha soniyadan so'ng qayta urinib ko'ring");
+      assert.ok(Number(r.headers.get('retry-after')) >= 1);
+    }
+    // 503 bo'lgan so'z keshlanmagan — navbat bo'shagach odatdagidek (miss) javob beradi
+    await pause();
+    const i503 = burst.findIndex((r) => r.status === 503);
+    const again = await api(`/api/geo/search?q=${encodeURIComponent(`Tirband ${RUN} ${i503}`)}`);
+    assert.equal(again.status, 200);
+    assert.equal(again.headers.get('x-geo-cache'), 'miss');
   });
 });

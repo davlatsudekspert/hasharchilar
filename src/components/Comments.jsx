@@ -134,10 +134,13 @@ export default function Comments({ hasharId, onCount }) {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) submit(e);
               }}
               rows={1}
-              placeholder={user ? 'Izoh yozing…' : 'Izoh yozish uchun kiring'}
-              className="max-h-40 min-h-12 w-full resize-y rounded-2xl border border-line bg-surface px-4 py-3 pr-14 text-[15px] text-ink outline-none placeholder:text-ink-3 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15"
+              placeholder={user ? 'Izoh yozing…' : 'Izoh uchun kiring'}
+              className={cx(
+                'block max-h-40 min-h-12 w-full resize-y rounded-2xl border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-3 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15',
+                body.length > MAX * 0.8 && 'pb-6',
+              )}
             />
-            {body.length > MAX * 0.8 && <span className="absolute bottom-2 right-14 text-[11px] text-ink-3 tabular">{body.length}/{MAX}</span>}
+            {body.length > MAX * 0.8 && <span className="pointer-events-none absolute bottom-1.5 right-3 text-[11px] text-ink-3 tabular">{body.length}/{MAX}</span>}
           </div>
           <button
             type="submit"

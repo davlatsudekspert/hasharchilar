@@ -20,13 +20,14 @@ function StatCard({ icon: Icon, label, value, hint, tone = 'emerald' }) {
   };
   return (
     <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200/70">
-      <div className="flex items-center justify-between gap-2">
-        <span className="min-w-0 truncate text-sm font-semibold text-slate-500">{label}</span>
+      {/* Nom kartaning to'liq kengligida (ikonka qiymat qatorida) — "Foydalanuvchilar" telefonda ham sig'adi */}
+      <p className="truncate text-sm font-semibold text-slate-500">{label}</p>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <p className="text-3xl font-black tracking-tight text-slate-900">{value ?? '—'}</p>
         <span className={cx('grid h-9 w-9 shrink-0 place-items-center rounded-xl', tones[tone])}>
           <Icon className="h-[18px] w-[18px]" />
         </span>
       </div>
-      <p className="mt-1 text-3xl font-black tracking-tight text-slate-900">{value ?? '—'}</p>
       {hint && <p className="mt-0.5 text-xs font-semibold text-emerald-700">{hint}</p>}
     </div>
   );

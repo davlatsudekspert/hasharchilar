@@ -1,17 +1,21 @@
 // Asosiy xarita: klasterlar (GeoJSON cluster), HTML pinlar, popup, foydalanuvchi joylashuvi, fitBounds.
 // Tungi rejimda OpenFreeMap "dark" uslubi; uslub almashganda qatlamlar qayta qo'shiladi.
+// getPadding() — xarita ustidagi panellar (filtrlar, pastki panel) egallagan joy: barcha kamera harakatlari
+// nuqtani shu panellar orasidagi ko'rinadigan qismga keltiradi.
 import { useEffect, useRef } from 'react';
 import { mediaUrl } from '../../lib/config.js';
-import { createMap, fitTo, maplibregl, pinElement, styleUrl, toGeoJSON, userDotElement } from '../../lib/map.js';
+import { createMap, fitTo, maplibregl, padOffset, pinElement, setMapStyle, toGeoJSON, userDotElement } from '../../lib/map.js';
 import { useTheme } from '../../lib/theme.jsx';
-import { cx, formatDateTime, volunteersLabel } from '../../lib/utils.js';
+import { cx, formatDateTime, statusOf, volunteersLabel } from '../../lib/utils.js';
 import MapAttribution from './MapAttribution.jsx';
 
 const SRC = 'hashars';
+const CLUSTER_MAX_ZOOM = 14;
+const SELECT_ZOOM = CLUSTER_MAX_ZOOM + 1; // tanlangan nuqta klaster ichida qolmasin
 
 function addLayers(map, data) {
   if (map.getSource(SRC)) return;
-  map.addSource(SRC, { type: 'geojson', data, cluster: true, clusterRadius: 52, clusterMaxZoom: 14 });
+  map.addSource(SRC, { type: 'geojson', data, cluster: true, clusterRadius: 52, clusterMaxZoom: CLUSTER_MAX_ZOOM });
   map.addLayer({
     id: 'cluster-halo',
     type: 'circle',
@@ -65,9 +69,9 @@ function popupContent(h, onOpen) {
   const body = document.createElement('div');
   body.className = 'mpop__body';
   const chip = document.createElement('span');
-  const done = h.status === 'COMPLETED';
-  chip.className = `mpop__chip ${done ? 'is-done' : 'is-pending'}`;
-  chip.textContent = done ? '✓ Bajarildi' : '● Kutilmoqda';
+  const st = statusOf(h);
+  chip.className = `mpop__chip ${st === 'COMPLETED' ? 'is-done' : st === 'PAST' ? 'is-past' : 'is-pending'}`;
+  chip.textContent = st === 'COMPLETED' ? '✓ Bajarildi' : st === 'PAST' ? "● O'tib ketgan" : '● Kutilmoqda';
   const title = document.createElement('div');
   title.className = 'mpop__title';
   title.textContent = h.title;
@@ -84,15 +88,34 @@ function popupContent(h, onOpen) {
   return root;
 }
 
-export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, userPos, className, attributionClassName, fitPadding = 64, initialFit = true, controls = true }) {
+export default function HasharMap({
+  hashars = [],
+  selectedId,
+  highlightId = null,
+  onSelect,
+  onOpen,
+  userPos,
+  className,
+  attributionClassName,
+  getPadding,
+  fitPadding = 64,
+  popups = true,
+  initialFit = true,
+  controls = true,
+}) {
   const boxRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map()); // id -> { marker, el }
   const popupRef = useRef(null);
   const userMarkerRef = useRef(null);
   const dataRef = useRef(hashars);
-  const cbRef = useRef({ onSelect, onOpen });
-  cbRef.current = { onSelect, onOpen };
+  const cbRef = useRef({ onSelect, onOpen, getPadding, popups });
+  cbRef.current = { onSelect, onOpen, getPadding, popups };
+  const selectedRef = useRef(selectedId);
+  selectedRef.current = selectedId;
+  const highlightRef = useRef(highlightId);
+  highlightRef.current = highlightId;
+  const pad = () => (cbRef.current.getPadding ? cbRef.current.getPadding() : fitPadding);
   dataRef.current = hashars;
   const byId = useRef(new Map());
   byId.current = new Map(hashars.map((h) => [h.id, h]));
@@ -104,6 +127,8 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
     const map = mapRef.current;
     if (!map || !h) return;
     popupRef.current?.remove();
+    popupRef.current = null;
+    if (!cbRef.current.popups) return; // mobil: popup o'rniga pastki karuseldagi karta
     popupRef.current = new maplibregl.Popup({ offset: [0, -40], maxWidth: '270px', closeButton: true, focusAfterOpen: false })
       .setLngLat([h.lng, h.lat])
       .setDOMContent(popupContent(h, (id) => cbRef.current.onOpen?.(id)))
@@ -126,17 +151,20 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
         seen.add(id);
         const h = byId.current.get(id);
         if (!h) continue;
+        const kind = statusOf(h);
         let entry = markersRef.current.get(id);
-        if (!entry || entry.status !== h.status) {
+        if (!entry || entry.status !== kind) {
           entry?.marker.remove();
-          const el = pinElement(h.status, { label: h.title });
+          // Klasterdan endi chiqqan pin ham tanlangan/belgilangan holatini olsin
+          const el = pinElement(kind, { label: h.title, selected: id === selectedRef.current });
+          if (id === highlightRef.current) el.classList.add('is-hover');
           el.addEventListener('click', (e) => {
             e.stopPropagation();
             cbRef.current.onSelect?.(id);
             showPopup(byId.current.get(id));
           });
           const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([h.lng, h.lat]).addTo(map);
-          entry = { marker, el, status: h.status };
+          entry = { marker, el, status: kind };
           markersRef.current.set(id, entry);
         }
       }
@@ -155,7 +183,7 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
       if (!f) return;
       try {
         const zoom = await map.getSource(SRC).getClusterExpansionZoom(f.properties.cluster_id);
-        map.easeTo({ center: f.geometry.coordinates, zoom: zoom + 0.3 });
+        map.easeTo({ center: f.geometry.coordinates, zoom: zoom + 0.3, offset: padOffset(pad()) });
       } catch {
         /* e'tiborsiz */
       }
@@ -180,7 +208,7 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
     const map = mapRef.current;
     if (!map || darkRef.current === dark) return;
     darkRef.current = dark;
-    map.setStyle(styleUrl(dark));
+    setMapStyle(map, dark);
   }, [dark]);
 
   // ---- Ma'lumot o'zgarganda ----
@@ -194,12 +222,13 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
       if (initialFit && key !== fittedKey.current && hashars.length) {
         const first = fittedKey.current === '';
         fittedKey.current = key;
-        fitTo(map, hashars, { padding: fitPadding, animate: !first });
+        fitTo(map, hashars, { padding: pad(), animate: !first });
       }
     };
     if (map.isStyleLoaded() && map.getSource(SRC)) apply();
     else map.once('idle', apply);
-  }, [hashars, initialFit, fitPadding]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hashars, initialFit]);
 
   // ---- Tanlangan pin ----
   useEffect(() => {
@@ -210,9 +239,23 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
       if (selectedId == null) popupRef.current?.remove();
       return;
     }
-    map.easeTo({ center: [h.lng, h.lat], zoom: Math.max(map.getZoom(), 14), duration: 600 });
+    map.easeTo({ center: [h.lng, h.lat], zoom: Math.max(map.getZoom(), SELECT_ZOOM), offset: padOffset(pad()), duration: 600 });
     showPopup(h);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
+
+  // ---- Ro'yxatda kursor ostidagi hashar: faqat pin belgilanadi (kamera qimirlamaydi, popup ochilmaydi) ----
+  useEffect(() => {
+    markersRef.current.forEach((entry, id) => entry.el.classList.toggle('is-hover', id === highlightId));
+  }, [highlightId]);
+
+  // ---- Popup o'chirilsa (mobil o'lcham) — ochiq popup yopiladi ----
+  useEffect(() => {
+    if (!popups) {
+      popupRef.current?.remove();
+      popupRef.current = null;
+    }
+  }, [popups]);
 
   // ---- Foydalanuvchi joylashuvi ----
   useEffect(() => {
@@ -225,7 +268,8 @@ export default function HasharMap({ hashars = [], selectedId, onSelect, onOpen, 
     }
     if (!userMarkerRef.current) userMarkerRef.current = new maplibregl.Marker({ element: userDotElement() }).setLngLat([userPos.lng, userPos.lat]).addTo(map);
     else userMarkerRef.current.setLngLat([userPos.lng, userPos.lat]);
-    map.easeTo({ center: [userPos.lng, userPos.lat], zoom: Math.max(map.getZoom(), 13), duration: 800 });
+    map.easeTo({ center: [userPos.lng, userPos.lat], zoom: Math.max(map.getZoom(), 13), offset: padOffset(pad()), duration: 800 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPos]);
 
   return (

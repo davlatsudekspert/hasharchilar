@@ -354,6 +354,40 @@ describe('Emailsiz (eski) hisob: email majburiy qoidasi', () => {
     assert.equal((await api('/api/hashars', { method: 'POST', form: hasharForm() })).status, 401);
   });
 
+  test("eski v2 APK (client belgisiz) → 403 app_update_required, 'Ilovani yangilang'", async () => {
+    const t = legacy.token;
+    const calls = [
+      ["qo'shilish", () => api(`/api/hashars/${hashar.id}/join`, { method: 'POST', token: t, oldClient: true })],
+      ['hashar yaratish', () => api('/api/hashars', { method: 'POST', token: t, form: hasharForm(), oldClient: true })],
+      ['izoh', () => api(`/api/hashars/${hashar.id}/comments`, { method: 'POST', token: t, json: { body: 'Salom' }, oldClient: true })],
+    ];
+    for (const [label, call] of calls) {
+      const r = await call();
+      assert.equal(r.status, 403, `${label}: ${JSON.stringify(r.data)}`);
+      assert.equal(r.data.code, 'app_update_required', label);
+      assert.match(r.data.error, /^Ilovani yangilang/, label);
+    }
+    // Noma'lum / eski versiya belgisi ham eski mijoz
+    const v2 = await api(`/api/hashars/${hashar.id}/join`, { method: 'POST', token: t, oldClient: true, headers: { 'x-client': 'hasharchilar/2' } });
+    assert.equal(v2.data.code, 'app_update_required');
+    // Ko'rish eski mijozga ham ochiq
+    assert.equal((await api('/api/me', { token: t, oldClient: true })).status, 200);
+    // Versiya belgisi query'da — APK uchun CORS preflight faqat Authorization so'raydi (eski worker ham ruxsat beradi)
+    const pre = await api('/api/hashars/1/join?client=3', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://localhost', 'access-control-request-method': 'POST', 'access-control-request-headers': 'authorization' },
+    });
+    assert.equal(pre.status, 204);
+    assert.equal(pre.headers.get('access-control-allow-origin'), 'https://localhost');
+    // Noto'g'ri query → eski mijoz; X-Client sarlavhasi ham qabul qilinadi (moslik)
+    const badQ = await api(`/api/hashars/${hashar.id}/join?client=abc`, { method: 'POST', token: t, oldClient: true });
+    assert.equal(badQ.data.code, 'app_update_required');
+    const hdr = await api(`/api/hashars/${hashar.id}/join`, { method: 'POST', token: t, oldClient: true, headers: { 'x-client': 'hasharchilar/3' } });
+    assert.equal(hdr.data.code, 'email_unverified', JSON.stringify(hdr.data));
+    const q3 = await api(`/api/hashars/${hashar.id}/join?client=3`, { method: 'POST', token: t, oldClient: true });
+    assert.equal(q3.data.code, 'email_unverified', JSON.stringify(q3.data));
+  });
+
   test("me/email: start/verify → endi hamma amal ishlaydi, email bilan kirish ham", async () => {
     const email = randomEmail('legacy');
     const s = await post('/api/me/email/start', { email: email.toUpperCase() }, { token: legacy.token });

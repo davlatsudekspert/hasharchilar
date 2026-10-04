@@ -226,7 +226,9 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
   validatsiya qismi bajariladi, qolganlari o'tkazib yuboriladi. `npm run dev:api` mock'siz — lokal dev'da haqiqiy
   Nominatim ishlatiladi. Production'da `GEO_MOCK` hech qachon o'rnatilmaydi.
 - 300+ eski hasharli test eski sanali qatorlarni `wrangler d1 execute` bilan yozadi, shuning uchun DO
-  rejimida (`STORAGE=do`) o'tkazib yuboriladi.
+  rejimida (`STORAGE=do`) o'tkazib yuboriladi. Bu ikkinchi jarayon ishlab turgan server bilan bitta SQLite
+  faylga yozadi — parallel so'rovlar `SQLITE_BUSY` (500) olishi mumkin, shuning uchun `test:api` fayllarni
+  ketma-ket ishga tushiradi (`--test-concurrency=1`).
 - `/api/app` testi `dist/app/` ga qaraydi: `dist/app/hasharchilar.apk` + `version.json` bo'lsa "mavjud"
   holati (versiya, hajm, yuklab olingan baytlar, sha256), bo'lmasa "yo'q" holati (`available:false`, 404 JSON) tekshiriladi.
 - `test:storage` bir xil so'rovlar ketma-ketligini haqiqiy lokal D1 va `HasharDB` adapterida bajarib,
@@ -371,11 +373,12 @@ olib tashlash alohida migratsiya talab qiladi.
 ### APK qayerda turadi
 
 - APK va uning metama'lumoti saytning statik fayllari ichida: `/app/hasharchilar.apk`, `/app/version.json`.
-- `GET /api/app` → `{available, version, size, url: "/api/app/download"}`; `GET /api/app/download` APK ni
+- `GET /api/app` → `{available, version, versionCode, size, url: "/api/app/download"}`; `GET /api/app/download` APK ni
   `content-type: application/vnd.android.package-archive` va `content-disposition: attachment; filename="hasharchilar.apk"`
   bilan beradi. Avval statik fayllar (`env.ASSETS`), ular bo'lmasa R2 dagi `app/hasharchilar.apk` (eski usul) o'qiladi.
   SPA rejimida yo'q fayl o'rniga `index.html` qaytadi — bu "APK yo'q" deb hisoblanadi.
-- Saytdagi "Android ilovasini yuklab olish" banneri `/api/app` `available: true` bo'lganda chiqadi.
+- Saytdagi "Android ilovasini yuklab olish" banneri `/api/app` `available: true` bo'lganda chiqadi. APK ichida
+  esa `versionCode` o'rnatilgan ilovanikidan katta bo'lsa "Yangi versiya — Yangilash" banneri chiqadi.
 
 ### Kerakli secretlar
 
@@ -502,6 +505,7 @@ Email xizmati **yoqilgan** bo'lsa (`RESEND_API_KEY` bor yoki lokal/test `EMAIL_M
   kira oladi, hamma narsani ko'radi, profilini tahrirlaydi va email qo'sha oladi. Lekin hashar yaratish,
   qo'shilish, chiqish, yakunlash, o'z hasharini o'chirish va izoh yozish — 403
   `{"error": "Avval emailingizni tasdiqlang", "code": "email_unverified"}` (`requireVerifiedEmail`).
+  Eski v2 APK (`?client=3` belgisiz; v3 sayt/APK uni query'da yuboradi — CORS o'zgarmaydi, yangi APK eski worker bilan ham ishlaydi) shu holatda 403 `app_update_required` "Ilovani yangilang: …" oladi.
   Admin moderatsiyasi (`/api/admin/*`) bunga kirmaydi.
 - **Sayt/APK:** bunday foydalanuvchi kirganda to'liq ekranli "Emailni tasdiqlang" bosqichi (email → kod) chiqadi;
   "Keyinroq" bosilsa ko'rish sahifalarida yopsa bo'ladigan eslatma (banner) turadi, yozuvchi amalga urinish
@@ -560,7 +564,7 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | GET | `/api/health` | – | `{ok:true}` |
 | GET | `/api/admin/overview` | ✓ admin | umumiy raqamlar + `recent_hashars`, `recent_users` (5 tadan) |
 | GET | `/api/admin/users` | ✓ admin | `?q=&offset=&limit=` (≤ 100; ism, telefon yoki email) → `{items, total}` (`email`, `email_verified` bilan) |
-| POST | `/api/admin/users/:id/block`, `/unblock`, `/role` | ✓ admin | bloklash (sessiyalar o'chadi) / blokdan chiqarish / `{role: 'user'\|'admin'}` |
+| POST | `/api/admin/users/:id/block`, `/unblock`, `/role` | ✓ admin | bloklash (sessiyalar o'chadi, boshqalarning hali bo'lmagan PENDING hasharlaridagi qatnashuvlari bekor qilinadi — joy bo'shaydi; o'tib ketgan hasharlardagi qatnashuv qoladi) / blokdan chiqarish / `{role: 'user'\|'admin'}` |
 | DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, email kodlari, qatnashuvlari, izohlari, hasharlari, ularning rasmlari va avatari |
 | GET | `/api/admin/hashars` | ✓ admin | `?status=&q=&offset=&limit=` → `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari va izohlari bilan) |
@@ -574,7 +578,10 @@ tasdiqlangan emailni ham talab qiladi (403 `email_unverified`).
 **Geo proksi** (`worker/geo.js`): mijoz Nominatim'ga to'g'ridan-to'g'ri murojaat qilmaydi. Worker
 `format=jsonv2, countrycodes=uz, accept-language=uz,ru, limit=6` va `User-Agent: hasharchilar.uz/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)`
 bilan so'raydi; javob `geo_cache` jadvalida 30 kun saqlanadi (kalit: kichik harfli qidiruv so'zi yoki 4 xonagacha
-yaxlitlangan koordinata; javobda `x-geo-cache: hit|miss`). IP bo'yicha 30 so'rov / daqiqa (429). Upstream xatosi yoki
+yaxlitlangan koordinata; javobda `x-geo-cache: hit|miss`). IP bo'yicha 30 so'rov / daqiqa (429). Keshda yo'q so'rovlar
+butun ilova uchun umumiy navbatdan o'tadi (Nominatim qoidasi: ≤ 1 so'rov/s): ikki upstream so'rov orasida ≥ 1.1 s,
+navbat 3 s ichida kelmasa → 503 `"Manzil xizmati band…"` (Retry-After). Mijoz ham qidiruvni faqat Enter / "Qidirish"
+bosilganda yuboradi (avtomatik to'ldirish yo'q), reverse — faqat foydalanuvchi pinni surgandan keyin. Upstream xatosi yoki
 8 soniyalik timeout → 502 `"Manzil xizmati vaqtincha ishlamayapti"` (xato keshlanmaydi). Admin marshrutlari: mehmon → 401, oddiy foydalanuvchi → 403.
 
 CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor://localhost`, `http://localhost`,

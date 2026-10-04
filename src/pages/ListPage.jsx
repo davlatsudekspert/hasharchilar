@@ -20,7 +20,7 @@ import { GEO_MESSAGES, getCurrentPosition, hideSplash } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
 import { storage } from '../lib/storage.js';
 import { useApi } from '../lib/store.js';
-import { cx, distanceKm, matchesQuery, sortHashars, tashkentNow } from '../lib/utils.js';
+import { compareHashars, cx, distanceKm, matchesQuery, sortHashars, tashkentNow } from '../lib/utils.js';
 
 const SORTS = [
   { value: 'date', label: 'Sana bo\'yicha' },
@@ -88,7 +88,7 @@ export default function ListPage({ route }) {
     if (userPos) l = l.map((h) => ({ ...h, distance: distanceKm(userPos, h) }));
     if (radius && userPos) l = l.filter((h) => h.distance <= radius);
     const by = {
-      date: (a, b) => (a.status !== b.status ? (a.status === 'PENDING' ? -1 : 1) : a.status === 'PENDING' ? String(a.date_time).localeCompare(String(b.date_time)) : String(b.completed_at || b.date_time).localeCompare(String(a.completed_at || a.date_time))),
+      date: compareHashars, // kelgusi → bajarilgan → o'tib ketgan (yakunlanmagan)
       new: (a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')) || b.id - a.id,
       popular: (a, b) => (b.volunteer_count || 0) - (a.volunteer_count || 0),
       near: (a, b) => (a.distance ?? 1e9) - (b.distance ?? 1e9),
@@ -137,7 +137,7 @@ export default function ListPage({ route }) {
               type="search"
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Nomi, manzil yoki tavsif bo'yicha qidiring…"
+              placeholder="Nom, manzil, tavsif…"
               aria-label="Hasharlarni qidirish"
               className={cx(inputCls, 'h-12 pl-12 shadow-soft')}
             />
@@ -249,7 +249,7 @@ export default function ListPage({ route }) {
               </div>
             </div>
             <button type="button" onClick={reset} className={cx(btn.ghost, 'h-12 px-4')}>
-              <XIcon className="h-4 w-4" /> Tozalash
+              <XIcon className="h-4 w-4" /> Filtrlarni tozalash
             </button>
           </div>
         )}
@@ -297,7 +297,7 @@ export default function ListPage({ route }) {
             <>
               <p className="mb-3 text-sm font-semibold text-ink-3">{visible.length} ta hashar topildi</p>
               {view === 'grid' ? (
-                <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {visible.map((h) => (
                     <li key={h.id}>
                       <HasharCard hashar={h} distance={h.distance} className="h-full" />
@@ -305,7 +305,7 @@ export default function ListPage({ route }) {
                   ))}
                 </ul>
               ) : (
-                <ul className="grid gap-3 lg:grid-cols-2">
+                <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                   {visible.map((h) => (
                     <li key={h.id}>
                       <HasharRow hashar={h} distance={h.distance} />

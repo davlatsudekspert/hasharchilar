@@ -28,7 +28,7 @@ const tabFromHash = () => {
 
 function AdminHeader({ user }) {
   return (
-    <header className="app-header sticky top-0 z-[1100] border-b border-slate-200/80 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+    <header className="app-header safe-top sticky top-0 z-[1100] border-b border-slate-200/80 bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3">
         <a href="./" onClick={(e) => (e.preventDefault(), closeAdmin())} aria-label="hasharchilar.uz — bosh sahifa" className="min-w-0 rounded-xl">
           <Logo compact />
@@ -107,7 +107,8 @@ export default function AdminApp() {
   // Tab manzilda saqlanadi (#admin/users) — sahifa yangilansa ham o'sha tab ochiladi
   const changeTab = (id) => {
     setTab(id);
-    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#admin${id === 'overview' ? '' : `/${id}`}`);
+    // history.state saqlanadi (router'ning tarix chuqurligi — hIdx)
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#admin${id === 'overview' ? '' : `/${id}`}`);
     window.scrollTo(0, 0);
   };
 

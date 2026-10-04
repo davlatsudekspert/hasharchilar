@@ -1,5 +1,5 @@
 // D1 asosidagi oddiy limitlagich (fixed window).
-import { RateLimitError } from './validate.js';
+import { HttpError, RateLimitError } from './validate.js';
 
 /** IPv6 manzilni /64 prefiksga qisqartiradi (bitta abonent butun /64 tarmoqqa ega). */
 function ipv6Prefix64(ip) {
@@ -125,6 +125,34 @@ export function limitGeo(c) {
     60,
     "Manzil qidiruvi juda ko'p. Bir daqiqadan so'ng qayta urinib ko'ring",
   );
+}
+
+/**
+ * Butun ilova uchun umumiy "navbat": `key` bo'yicha ikki chaqiruv orasida kamida `gapMs` ms (barcha IP lar uchun bitta).
+ * Joy band bo'lsa — bo'shaguncha kutadi (ko'pi bilan `waitMs`), ulgurmasa 503 (Retry-After).
+ * Bitta atomar UPSERT: shart (oxirgi chaqiruvdan gapMs o'tgan) bajarilmasa qator yangilanmaydi va RETURNING bo'sh.
+ * window_start bu yerda millisekund (boshqa kalitlarda soniya) — eski yozuvlarni tozalash (soniya bo'yicha) unga tegmaydi.
+ */
+export async function upstreamGate(db, key, { gapMs, waitMs, message }) {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    const now = Date.now();
+    const row = await db
+      .prepare(
+        `INSERT INTO rate_limits (key, window_start, count) VALUES (?1, ?2, 1)
+         ON CONFLICT(key) DO UPDATE SET window_start = excluded.window_start, count = 1
+           WHERE rate_limits.window_start <= ?3
+         RETURNING window_start`,
+      )
+      .bind(key, now, now - gapMs)
+      .first();
+    if (row) return;
+    const cur = await db.prepare('SELECT window_start FROM rate_limits WHERE key = ?1').bind(key).first();
+    const freeAt = (cur ? Number(cur.window_start) : now) + gapMs;
+    const wait = Math.max(20, freeAt - Date.now()) + Math.floor(Math.random() * 40); // jitter: kutayotganlar bir vaqtda urilmasin
+    if (Date.now() + wait > deadline) throw new HttpError(503, message, { 'retry-after': String(Math.max(1, Math.ceil(gapMs / 1000) + 1)) });
+    await new Promise((resolve) => setTimeout(resolve, wait));
+  }
 }
 
 /** Kirish: bitta emailga 10 urinish / 15 daqiqa (telefon bilan bir xil hisob turi). */

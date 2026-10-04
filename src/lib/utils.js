@@ -51,6 +51,13 @@ export function formatDay(iso) {
   return `${d}-${MONTHS[m - 1]} ${y}`;
 }
 
+/** Qisqa raqamli sana: "04.10.2026" (tor jadval kataklari uchun). */
+export function formatDateShort(iso) {
+  const { y, m, d } = parts(iso);
+  if (!y || !m || !d) return '';
+  return `${String(d).padStart(2, '0')}.${String(m).padStart(2, '0')}.${y}`;
+}
+
 /** "2026-10" → "oktabr 2026" (a'zo bo'lgan sana). */
 export function formatMonth(iso) {
   const { y, m } = parts(iso);
@@ -93,20 +100,51 @@ export function formatPhone(phone) {
   return `+998 ${n.slice(4, 6)} ${n.slice(6, 9)} ${n.slice(9, 11)} ${n.slice(11, 13)}`;
 }
 
-/** Ism bosh harfi(lari): "Aziz Karimov" → "AK". */
+/**
+ * Ism bosh harfi(lari): "Aziz Karimov" → "AK". Har so'zdan birinchi harf/raqam olinadi (emoji, tirnoq,
+ * ʻ belgilari o'tkazib yuboriladi; harfi yo'q so'z tashlanadi). Kod nuqtasi bo'yicha — surrogat juftlik bo'linmaydi.
+ */
+const INITIAL_RE = /[\p{Lu}\p{Ll}\p{Lt}\p{Lo}\p{N}]/u;
 export function initials(name) {
-  const words = String(name || '').trim().split(/\s+/).filter(Boolean);
-  if (!words.length) return '?';
-  return (words[0][0] + (words[1] ? words[1][0] : '')).toUpperCase();
+  const letters = String(name || '')
+    .trim()
+    .split(/\s+/)
+    .map((w) => Array.from(w).find((ch) => INITIAL_RE.test(ch)))
+    .filter(Boolean);
+  if (!letters.length) return '?';
+  return (letters[0] + (letters[1] || '')).toUpperCase();
 }
 
-/** SPEC tartibi: PENDING sana bo'yicha o'sish, keyin COMPLETED eng yangisi. */
+/** Boshlangandan keyin shuncha vaqt "Hozir" (qo'shilish mumkin), keyin — o'tib ketgan. */
+const ONGOING_MIN = 3 * 60;
+
+/**
+ * Sanasi o'tib ketgan, lekin yakunlanmagan (PENDING) hashar: tashkilotchi "Yakunlash"ni bosmagan.
+ * Kutilayotganlar qatorida ko'rsatilmaydi, "Qatnashish" va "Kalendar" o'chiriladi.
+ */
+export function isOverdue(h) {
+  return !!h && h.status === 'PENDING' && !!h.date_time && String(h.date_time) < tashkentNow(-ONGOING_MIN);
+}
+
+/** Ko'rinadigan holat: 'PENDING' | 'COMPLETED' | 'PAST' (o'tib ketgan, yakunlanmagan). */
+export const statusOf = (h) => (isOverdue(h) ? 'PAST' : h.status);
+
+/**
+ * Tartib: kelgusi PENDING (yaqini birinchi) → COMPLETED (eng yangisi) → o'tib ketgan PENDING (yaqinda o'tgani birinchi).
+ * Server SPEC bo'yicha PENDING'ni sana o'sishida beradi — eskirganlar tepada qolmasligi uchun mijozda qayta saralanadi.
+ */
+export function compareHashars(a, b) {
+  const rank = (h) => (h.status === 'COMPLETED' ? 1 : isOverdue(h) ? 2 : 0);
+  const ra = rank(a);
+  const rb = rank(b);
+  if (ra !== rb) return ra - rb;
+  if (ra === 0) return String(a.date_time).localeCompare(String(b.date_time));
+  if (ra === 2) return String(b.date_time).localeCompare(String(a.date_time));
+  return String(b.completed_at || b.date_time).localeCompare(String(a.completed_at || a.date_time));
+}
+
 export function sortHashars(list) {
-  return [...list].sort((a, b) => {
-    if (a.status !== b.status) return a.status === 'PENDING' ? -1 : 1;
-    if (a.status === 'PENDING') return String(a.date_time).localeCompare(String(b.date_time));
-    return String(b.completed_at || b.date_time).localeCompare(String(a.completed_at || a.date_time));
-  });
+  return [...list].sort(compareHashars);
 }
 
 /** Qidiruv: nom, manzil, tavsif bo'yicha (katta-kichik harf farqsiz). */
@@ -141,11 +179,12 @@ export function timeAgo(iso) {
   return formatDay(iso);
 }
 
-/** Hashar boshlanishigacha qolgan vaqt: "3 kun qoldi", "Bugun", null (o'tib ketgan). */
+/** Hashar boshlanishigacha qolgan vaqt: "3 kun qoldi", "Bugun", "Hozir" (boshlangan), null (o'tib ketgan). */
 export function countdown(dateTime) {
   const now = tashkentNow();
   const d = String(dateTime || '');
-  if (!d || d < now) return null;
+  if (!d) return null;
+  if (d < now) return d >= tashkentNow(-ONGOING_MIN) ? 'Hozir' : null;
   const today = now.slice(0, 10);
   if (d.slice(0, 10) === today) return 'Bugun';
   if (d.slice(0, 10) === tashkentTomorrow()) return 'Ertaga';

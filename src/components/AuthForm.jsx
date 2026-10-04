@@ -47,8 +47,15 @@ function StepHeader({ title, text, onBack, backLabel }) {
   );
 }
 
+/** Sabab matni — faqat o'z kalitlari (?reason=__proto__ kabi havola Object.prototype'ni chiqarib, ilovani yiqitmasin). */
+export function authReasonText(reason) {
+  const t = typeof reason === 'string' && Object.prototype.hasOwnProperty.call(AUTH_REASONS, reason) ? AUTH_REASONS[reason] : null;
+  return typeof t === 'string' ? t : null;
+}
+
 export default function AuthForm({ reason, onSuccess, initialMode = 'login', busyChange }) {
   const { login, register, signIn } = useAuth();
+  const reasonText = authReasonText(reason);
   const { email_enabled: emailOn } = useServerConfig();
   const [mode, setMode] = useState(initialMode); // 'login' | 'register' | 'forgot'
   const [step, setStep] = useState('form'); // 'form' | 'code'
@@ -320,9 +327,9 @@ export default function AuthForm({ reason, onSuccess, initialMode = 'login', bus
 
   return (
     <div>
-      {reason && AUTH_REASONS[reason] && mode !== 'forgot' && (
+      {reasonText && mode !== 'forgot' && (
         <p className="mb-4 flex gap-2.5 rounded-2xl bg-brand-soft px-4 py-3 text-sm font-medium text-brand ring-1 ring-brand-line">
-          <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0" /> {AUTH_REASONS[reason]}
+          <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0" /> {reasonText}
         </p>
       )}
 
@@ -402,7 +409,7 @@ export default function AuthForm({ reason, onSuccess, initialMode = 'login', bus
                 autoComplete="username"
                 autoCapitalize="none"
                 spellCheck={false}
-                placeholder="+998 90 123 45 67 yoki ism@gmail.com"
+                placeholder="+998 90 123 45 67"
                 value={loginId}
                 maxLength={254}
                 onChange={(e) => {
