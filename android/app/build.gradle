@@ -1,0 +1,86 @@
+apply plugin: 'com.android.application'
+
+// Versiya: CI `-PversionCode=N -PversionName=1.0.N` beradi; standart 1 / "1.0.0" (SPEC 7)
+def appVersionCode = (project.findProperty('versionCode') ?: '1').toString().trim().toInteger()
+def appVersionName = (project.findProperty('versionName') ?: '1.0.0').toString().trim()
+if (appVersionCode < 1) {
+    throw new GradleException("versionCode musbat butun son bo'lishi kerak: ${appVersionCode}")
+}
+
+// Imzo: android/key.properties bo'lsa haqiqiy kalit (storeFile, storePassword, keyAlias, keyPassword),
+// aks holda release ham debug kaliti bilan imzolanadi — APK baribir o'rnatiladi.
+def keystorePropertiesFile = rootProject.file('key.properties')
+def keystoreProperties = new Properties()
+def hasReleaseKey = false
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+    hasReleaseKey = ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].every { keystoreProperties[it] }
+    if (!hasReleaseKey) {
+        throw new GradleException("android/key.properties to'liq emas: storeFile, storePassword, keyAlias, keyPassword kerak")
+    }
+}
+
+android {
+    namespace = "uz.hasharchilar.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId "uz.hasharchilar.app"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode appVersionCode
+        versionName appVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+    }
+    signingConfigs {
+        release {
+            if (hasReleaseKey) {
+                // storeFile nisbiy yo'l bo'lsa android/app/ ga nisbatan olinadi (masalan release.jks)
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig hasReleaseKey ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

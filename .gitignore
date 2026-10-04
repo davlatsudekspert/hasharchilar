@@ -1,0 +1,23 @@
+# Bog'liqliklar va build natijalari
+node_modules
+dist
+.wrangler
+out/
+# scripts/wrangler-config.mjs generatsiya qiladi (deploy / DO rejimi)
+wrangler.deploy.json
+
+# Maxfiy sozlamalar
+.dev.vars
+.env
+.env.*
+
+# Android: imzo kalitlari, lokal SDK yo'li, build natijalari (android/.gitignore da ham bor)
+*.jks
+*.keystore
+key.properties
+local.properties
+*.apk
+*.aab
+android/.gradle/
+android/build/
+android/app/build/

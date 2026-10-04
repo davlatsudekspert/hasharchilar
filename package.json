@@ -1,0 +1,40 @@
+{
+  "name": "hasharchilar",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "vite",
+    "dev:api": "mkdir -p dist && wrangler dev --port 8787",
+    "dev:api:do": "mkdir -p dist && node scripts/wrangler-config.mjs --storage do && wrangler dev --config wrangler.deploy.json --port 8787 --persist-to .wrangler/state-do",
+    "build": "vite build",
+    "db:local": "wrangler d1 migrations apply hasharchilar --local && wrangler d1 execute hasharchilar --local --file=seed.sql",
+    "db:remote": "wrangler d1 migrations apply hasharchilar --remote --config wrangler.deploy.json",
+    "test:api": "node --test tests/",
+    "test:storage": "node --test tests/storage.test.mjs",
+    "deploy": "vite build && wrangler deploy --config wrangler.deploy.json",
+    "android:sync": "vite build && cap sync android",
+    "android:apk": "vite build && cap sync android && cd android && ./gradlew assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.4",
+    "hono": "^4.13.13",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.0.1",
+    "tailwindcss": "^4.3.3",
+    "vite": "^6.0.0",
+    "wrangler": "^4.147.0"
+  }
+}

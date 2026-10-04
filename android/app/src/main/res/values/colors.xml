@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Brending ranglari (SPEC 2): emerald-600 / emerald-700 / amber-500 -->
+    <color name="colorPrimary">#059669</color>
+    <color name="colorPrimaryDark">#047857</color>
+    <color name="colorAccent">#F59E0B</color>
+    <!-- Splash va oyna foni -->
+    <color name="splash_background">#059669</color>
+</resources>

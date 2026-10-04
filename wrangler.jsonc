@@ -1,0 +1,38 @@
+{
+  // Cloudflare hisobidagi mavjud Worker (public: https://hasharchilar-api.davlatsudekspert.workers.dev)
+  "name": "hasharchilar-api",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-09-01",
+  // *.workers.dev manzili custom domen ulangandan keyin ham ishlayversin (eski APK'lar uchun)
+  "workers_dev": true,
+  // Statik React build (dist/); faqat /api/* Worker kodiga tushadi.
+  // ASSETS binding — Worker ichidan statik fayllarni o'qish uchun (dist/app/hasharchilar.apk).
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  // migrations/*.sql — matn moduli (Durable Object rejimida migratsiyalar bundle'ga kiradi)
+  "rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
+  // BAZA: D1 (DB) bo'lsa — D1; aks holda SQLite Durable Object HasharDB (HASHAR_DB).
+  // Lokal dev — D1 rejimi. Deploy: scripts/wrangler-config.mjs → wrangler.deploy.json
+  // (--storage d1 --d1-id <uuid> yoki --storage do: d1_databases olib tashlanadi).
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hasharchilar",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // DO har ikki rejimda ham e'lon qilinadi (o'chirish alohida migratsiya talab qiladi; D1 rejimida ishlatilmaydi)
+  "durable_objects": {
+    "bindings": [{ "name": "HASHAR_DB", "class_name": "HasharDB" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["HasharDB"] }],
+  "r2_buckets": [
+    { "binding": "PHOTOS", "bucket_name": "hasharchilar-photos" }
+  ],
+  "observability": { "enabled": true }
+}
