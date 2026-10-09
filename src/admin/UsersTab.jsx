@@ -163,18 +163,18 @@ export default function UsersTab({ meId, initialQuery = '' }) {
                       <UserBadges u={u} me={u.id === meId} />
                     </div>
                     <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm text-slate-600">
-                      <a href={`tel:${u.phone}`} className="font-medium hover:text-emerald-700 hover:underline">
+                      <a href={`tel:${u.phone}`} className="font-medium hover:text-brand-700 hover:underline">
                         {formatPhone(u.phone)}
                       </a>
                       {u.email && (
                         <a
                           href={`mailto:${u.email}`}
-                          className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium hover:text-emerald-700 hover:underline"
+                          className="inline-flex min-w-0 max-w-full items-center gap-1 font-medium hover:text-brand-700 hover:underline"
                           title={u.email_verified ? 'Email tasdiqlangan' : 'Email tasdiqlanmagan'}
                           data-testid="admin-user-email"
                         >
                           <span className="truncate">{u.email}</span>
-                          {u.email_verified && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-emerald-600" strokeWidth={3} />}
+                          {u.email_verified && <CheckIcon className="h-3.5 w-3.5 shrink-0 text-brand-600" strokeWidth={3} />}
                         </a>
                       )}
                     </p>

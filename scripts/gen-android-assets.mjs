@@ -11,6 +11,8 @@
 //   android/app/src/main/res/drawable{,-port-*,-land-*}/splash.png          — splash (gradient + barg + nom)
 //   resources/*.svg                                                          — manba SVG'lar
 //   resources/play-icon-512.png                                              — Google Play uchun 512x512
+//   android/app/src/main/res/drawable/ic_stat_hashar.xml                     — bildirishnoma kichik ikonkasi
+//                                                                              (oq, monoxrom vektor; capacitor.config LocalNotifications.smallIcon)
 // Adaptive fon: mipmap ic_launcher_background.png (gradient); rang zaxirasi values/ic_launcher_background.xml.
 //
 // Ishga tushirish (hasharchilar/ papkasida). playwright-core package.json'da YO'Q (faqat ikonka
@@ -20,6 +22,8 @@
 // Yoki mavjud nusxalarni ko'rsating:
 //   PLAYWRIGHT_CORE=/yo'l/node_modules/playwright-core/index.mjs \
 //   CHROMIUM_PATH=/yo'l/chromium node scripts/gen-android-assets.mjs
+// Faqat bildirishnoma ikonkasi (Chromium kerak emas):
+//   node scripts/gen-android-assets.mjs --notification-icon
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -165,6 +169,93 @@ function playIcon(s) {
 /** Sayt ikonkalari (public/icon-*.png, favicon.svg). */
 const webIcon = (s) => legacyIcon(s);
 
+// --- Bildirishnoma kichik ikonkasi (status bar) ---
+// Android faqat alfa kanalini oladi (rang — iconColor). Vektor: 24dp, barg + band, tomir — evenOdd teshik.
+const fmt = (n) => Number(n.toFixed(3)).toString();
+
+/** Kubik Bezye (tomir) atrofida `w` qalinlikdagi yopiq kontur (yumaloq uchlar bilan). */
+function strokeOutline(p0, p1, p2, p3, w, steps = 14) {
+  const pt = (t) => {
+    const u = 1 - t;
+    return [
+      u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+      u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1],
+    ];
+  };
+  const tan = (t) => {
+    const u = 1 - t;
+    const dx = 3 * u * u * (p1[0] - p0[0]) + 6 * u * t * (p2[0] - p1[0]) + 3 * t * t * (p3[0] - p2[0]);
+    const dy = 3 * u * u * (p1[1] - p0[1]) + 6 * u * t * (p2[1] - p1[1]) + 3 * t * t * (p3[1] - p2[1]);
+    const l = Math.hypot(dx, dy) || 1;
+    return [dx / l, dy / l];
+  };
+  const r = w / 2;
+  const left = [];
+  const right = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const [x, y] = pt(t);
+    const [tx, ty] = tan(t);
+    left.push([x - ty * r, y + tx * r]);
+    right.push([x + ty * r, y - tx * r]);
+  }
+  const P = (q) => `${fmt(q[0])} ${fmt(q[1])}`;
+  // Uchlar: yarim doira tashqariga (ekran koordinatasida soat miliga teskari — sweep 0)
+  const arc = (q) => `A${fmt(r)} ${fmt(r)} 0 0 0 ${P(q)}`;
+  return (
+    `M${P(left[0])}` +
+    left.slice(1).map((q) => `L${P(q)}`).join('') +
+    arc(right[right.length - 1]) +
+    right
+      .slice(0, -1)
+      .reverse()
+      .map((q) => `L${P(q)}`)
+      .join('') +
+    arc(left[0]) +
+    'Z'
+  );
+}
+
+/** res/drawable/ic_stat_hashar.xml — barg (saytdagi LeafIcon bilan bir xil shakl), 24dp. */
+function notificationIconXml() {
+  // Barg 24 birlikli koordinatada ~ (2..21); 24dp ikonka ichida 1dp chekka bilan joylashtiramiz
+  const k = 20 / 19;
+  const tx = 12 - LEAF_CENTER * k;
+  const vein = strokeOutline([9.8, 14.2], [12.2, 11.6], [14.6, 9.6], [17.4, 7.6], 1.6);
+  return `<?xml version="1.0" encoding="utf-8"?>
+<!-- scripts/gen-android-assets.mjs generatsiya qiladi: bildirishnoma kichik ikonkasi (oq barg, monoxrom) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:translateX="${fmt(tx)}"
+        android:translateY="${fmt(tx)}"
+        android:scaleX="${fmt(k)}"
+        android:scaleY="${fmt(k)}">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="${LEAF_SHAPE} ${vein}" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"
+            android:pathData="${LEAF_STEM}" />
+    </group>
+</vector>
+`;
+}
+
+async function writeNotificationIcon() {
+  const file = path.join(RES, 'drawable', 'ic_stat_hashar.xml');
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, notificationIconXml());
+  console.log('✓', path.relative(ROOT, file));
+}
+
 // --- Chromium ---
 
 async function loadPlaywright() {
@@ -182,6 +273,8 @@ async function loadPlaywright() {
 }
 
 async function main() {
+  await writeNotificationIcon();
+  if (process.argv.includes('--notification-icon')) return;
   const chromium = await loadPlaywright();
   const browser = await chromium.launch({
     executablePath: process.env.CHROMIUM_PATH || undefined,

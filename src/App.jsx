@@ -1,44 +1,25 @@
-// Ilova qobig'i: yuqori navigatsiya, sahifalar (hash router), pastki tab bar, oflayn banner.
-import { useEffect, useLayoutEffect } from 'react';
+// Ilova qobig'i: yuqori navigatsiya, sahifalar (hash router, lazy chunk'lar), pastki tab bar, oflayn banner,
+// onboarding (APK birinchi ochilganda), bildirishnomalar soni va eslatmalarni sinxronlash.
+import { lazy, Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import AppBanner, { useAppInfo } from './components/AppBanner.jsx';
-import { EmailBanner } from './components/EmailVerifyScreen.jsx';
+import { EmailBanner } from './components/EmailBanner.jsx';
 import Footer from './components/Footer.jsx';
 import Header from './components/Header.jsx';
 import OfflineBanner from './components/OfflineBanner.jsx';
+import { PageFallback } from './components/PageFallback.jsx';
 import TabBar from './components/TabBar.jsx';
 import { ActionsProvider, useActions } from './lib/actions.jsx';
 import { useAuth } from './lib/auth.jsx';
 import { hideSplash } from './lib/native.js';
+import { useNotificationsPolling } from './lib/notifications.js';
+import { shouldShowOnboarding } from './lib/onboarding.js';
+import { idlePrefetch, pageFor } from './lib/pages.js';
+import { useReminderSync } from './lib/reminders.js';
 import { navWasPop, savedScroll, useRoute } from './lib/router.js';
 import { useServerConfig } from './lib/serverConfig.js';
 import { cx } from './lib/utils.js';
-import AboutPage from './pages/AboutPage.jsx';
-import CreatePage from './pages/CreatePage.jsx';
-import HasharPage from './pages/HasharPage.jsx';
-import HomePage from './pages/HomePage.jsx';
-import LeaderboardPage from './pages/LeaderboardPage.jsx';
-import ListPage from './pages/ListPage.jsx';
-import LoginPage from './pages/LoginPage.jsx';
-import MapPage from './pages/MapPage.jsx';
-import NotFoundPage from './pages/NotFoundPage.jsx';
-import ProfilePage from './pages/ProfilePage.jsx';
-import ResultsPage from './pages/ResultsPage.jsx';
-import UserPage from './pages/UserPage.jsx';
 
-const PAGES = {
-  home: HomePage,
-  map: MapPage,
-  list: ListPage,
-  hashar: HasharPage,
-  create: CreatePage,
-  results: ResultsPage,
-  leaderboard: LeaderboardPage,
-  profile: ProfilePage,
-  user: UserPage,
-  about: AboutPage,
-  login: LoginPage,
-  notfound: NotFoundPage,
-};
+const Onboarding = lazy(() => import('./components/Onboarding.jsx'));
 
 const TITLES = {
   home: 'Birgalikda obod qilamiz',
@@ -50,11 +31,15 @@ const TITLES = {
   profile: 'Profilim',
   about: 'Loyiha haqida',
   login: 'Kirish',
+  notifications: 'Bildirishnomalar',
+  payment: "To'lov",
   notfound: 'Sahifa topilmadi',
 };
 
 // "Emailingizni tasdiqlang" eslatmasi faqat ko'rish sahifalarida (xarita — to'liq ekran, yaratish/kirish — o'z oqimi)
-const NO_EMAIL_BANNER = new Set(['map', 'create', 'login']);
+const NO_EMAIL_BANNER = new Set(['map', 'create', 'login', 'payment']);
+// Pastki tab bar ko'rinmaydigan sahifalar (o'z pastki tugmalari bor)
+const NO_TABBAR = new Set(['create', 'payment']);
 
 function EmailBannerSlot({ route }) {
   const { user } = useAuth();
@@ -64,15 +49,24 @@ function EmailBannerSlot({ route }) {
   return <EmailBanner onVerify={() => promptVerify('login')} />;
 }
 
+/** Fon jarayonlari: bildirishnomalar soni (ko'rinib turganda 60 s da) va APK eslatmalari. */
+function Background() {
+  useNotificationsPolling();
+  useReminderSync();
+  return null;
+}
+
 export default function App() {
   const route = useRoute();
   const appInfo = useAppInfo();
-  const Page = PAGES[route.name] || NotFoundPage;
+  const Page = pageFor(route.name);
+  const [onboarding, setOnboarding] = useState(() => shouldShowOnboarding(route));
 
   // Yangi sahifa — tepadan; "orqaga" — avvalgi joyga
   useLayoutEffect(() => {
     if (navWasPop()) {
       const y = savedScroll(route.hash);
+      window.scrollTo(0, y);
       requestAnimationFrame(() => window.scrollTo(0, y));
     } else {
       window.scrollTo(0, 0);
@@ -85,29 +79,39 @@ export default function App() {
 
   useEffect(() => {
     const t = setTimeout(hideSplash, 500);
+    idlePrefetch();
     return () => clearTimeout(t);
   }, []);
 
   const isMap = route.name === 'map';
-  const isCreate = route.name === 'create';
-  const showFooter = !isMap && !isCreate;
+  const showFooter = !isMap && route.name !== 'create' && route.name !== 'payment';
+  const showTabBar = !NO_TABBAR.has(route.name);
 
   return (
     <ActionsProvider>
-      <div className={cx('flex min-h-dvh flex-col', !isCreate && !isMap && 'app-main')}>
+      <div className={cx('flex min-h-dvh flex-col', showTabBar && !isMap && 'app-main')}>
         <a href="#main" className="skip-link" onClick={(e) => (e.preventDefault(), document.getElementById('main')?.focus())}>
           Asosiy qismga o'tish
         </a>
+        <div className="nav-progress" aria-hidden="true" />
         <OfflineBanner />
         <Header />
         <EmailBannerSlot route={route} />
         {route.name === 'home' && <AppBanner info={appInfo} />}
         <main id="main" tabIndex={-1} key={route.path} className="page-enter flex-1 outline-none">
-          <Page route={route} appInfo={appInfo} />
+          <Suspense fallback={<PageFallback />}>
+            <Page route={route} appInfo={appInfo} />
+          </Suspense>
         </main>
         {showFooter && <Footer appInfo={appInfo} className={route.name === 'home' || route.name === 'about' ? '' : 'hidden lg:block'} />}
       </div>
-      {!isCreate && <TabBar />}
+      {showTabBar && <TabBar />}
+      <Background />
+      {onboarding && (
+        <Suspense fallback={null}>
+          <Onboarding onDone={() => setOnboarding(false)} />
+        </Suspense>
+      )}
     </ActionsProvider>
   );
 }

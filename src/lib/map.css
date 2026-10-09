@@ -1,0 +1,129 @@
+/* MapLibre uslublari (aksent va tungi rejimga mos): faqat xarita ochilganda yuklanadi — src/lib/map.js
+   maplibre-gl.css dan KEYIN import qiladi (ustun turishi uchun). Tungi rejim: <html class="dark">. */
+.maplibregl-map {
+  font-family: inherit;
+}
+.maplibregl-ctrl-attrib {
+  font-size: 10.5px;
+}
+.dark .maplibregl-ctrl-attrib,
+.dark .maplibregl-ctrl-attrib.maplibregl-compact {
+  background: color-mix(in srgb, var(--c-surface) 85%, transparent);
+  color: var(--c-ink-2);
+}
+.dark .maplibregl-ctrl-attrib a { color: var(--a-300); }
+.dark .maplibregl-ctrl-attrib-button { filter: invert(1); }
+.maplibregl-ctrl-group {
+  border-radius: 14px !important;
+  overflow: hidden;
+  box-shadow: 0 6px 18px rgb(15 23 42 / 0.18) !important;
+}
+.maplibregl-ctrl-group button {
+  width: 38px !important;
+  height: 38px !important;
+}
+.dark .maplibregl-ctrl-group { background: var(--c-surface-2); }
+.dark .maplibregl-ctrl-group button + button { border-top-color: var(--c-line-strong); }
+.dark .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(0.9); }
+
+.hpin {
+  cursor: pointer;
+  display: block;
+  border: 0;
+  background: none;
+  padding: 0;
+}
+.hpin > svg {
+  display: block;
+  transform-origin: 50% 100%;
+  transition: transform 0.18s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  filter: drop-shadow(0 4px 5px rgb(15 23 42 / 0.35));
+}
+.hpin:hover > svg, .hpin.is-selected > svg, .hpin.is-hover > svg { transform: scale(1.2); }
+.hpin.is-selected, .hpin.is-hover { z-index: 2; }
+.hpin.is-hover > svg { filter: drop-shadow(0 0 0 #fff) drop-shadow(0 6px 10px color-mix(in srgb, var(--a-600) 55%, transparent)); }
+
+.user-dot { position: relative; width: 22px; height: 22px; }
+.user-dot__core,
+.user-dot__pulse {
+  position: absolute;
+  inset: 3px;
+  border-radius: 9999px;
+}
+.user-dot__core {
+  background: #0ea5e9;
+  border: 3px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+.user-dot__pulse {
+  background: rgba(14, 165, 233, 0.35);
+  animation: pulse 2s ease-out infinite;
+}
+@keyframes pulse {
+  from { transform: scale(1); opacity: 1; }
+  to { transform: scale(3.2); opacity: 0; }
+}
+
+.maplibregl-popup-content {
+  border-radius: 18px !important;
+  padding: 0 !important;
+  box-shadow: 0 18px 40px rgb(15 23 42 / 0.28) !important;
+  background: var(--c-surface) !important;
+  color: var(--c-ink);
+  overflow: hidden;
+}
+.maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip { border-top-color: var(--c-surface) !important; }
+.maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.maplibregl-popup-anchor-top-right .maplibregl-popup-tip { border-bottom-color: var(--c-surface) !important; }
+.maplibregl-popup-anchor-left .maplibregl-popup-tip { border-right-color: var(--c-surface) !important; }
+.maplibregl-popup-anchor-right .maplibregl-popup-tip { border-left-color: var(--c-surface) !important; }
+.maplibregl-popup-close-button {
+  width: 28px;
+  height: 28px;
+  font-size: 20px;
+  top: 6px !important;
+  right: 6px !important;
+  border-radius: 999px;
+  color: #fff;
+  background: rgb(15 23 42 / 0.55) !important;
+  line-height: 1;
+}
+.mpop { width: 250px; font-family: inherit; }
+.mpop__img { display: block; width: 100%; height: 112px; object-fit: cover; background: var(--c-surface-2); }
+.mpop__body { padding: 12px 14px 14px; }
+.mpop__chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px;
+}
+.mpop__chip.is-pending { background: #fef3c7; color: #92400e; }
+.mpop__chip.is-done { background: var(--a-100); color: var(--a-800); }
+.dark .mpop__chip.is-pending { background: rgb(245 158 11 / 0.18); color: #fcd34d; }
+.dark .mpop__chip.is-done { background: color-mix(in srgb, var(--a-500) 18%, transparent); color: var(--a-300); }
+.mpop__chip.is-past { background: #e2e8f0; color: #334155; }
+.dark .mpop__chip.is-past { background: rgb(148 163 184 / 0.18); color: #cbd5e1; }
+.mpop__title {
+  margin-top: 6px; font-family: var(--font-display); font-size: 15px; font-weight: 800; line-height: 1.3; color: var(--c-ink);
+  overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mpop__meta { margin-top: 4px; font-size: 12.5px; color: var(--c-ink-3); }
+.mpop__btn {
+  margin-top: 10px; width: 100%; border: 0; border-radius: 12px; padding: 9px 12px;
+  font: inherit; font-size: 13.5px; font-weight: 700; cursor: pointer;
+  background: var(--a-600); color: #fff;
+}
+.mpop__btn:hover { background: var(--a-700); }
+@media (max-width: 1023px) {
+  .map-page .maplibregl-ctrl-top-right {
+    top: 140px;
+  }
+}
+/* Telefon yotiq holatda (past ekran): filtrlar bitta qatorda — zoom tugmalari yuqoriroqda */
+@media (max-width: 1023px) and (max-height: 500px) {
+  .map-page .maplibregl-ctrl-top-right {
+    top: 56px;
+  }
+}

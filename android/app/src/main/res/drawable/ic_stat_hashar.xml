@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- scripts/gen-android-assets.mjs generatsiya qiladi: bildirishnoma kichik ikonkasi (oq barg, monoxrom) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <group
+        android:translateX="-0.105"
+        android:translateY="-0.105"
+        android:scaleX="1.053"
+        android:scaleY="1.053">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.5 19 2c1 2 2 4.2 2 8 0 5.5-4.8 10-10 10Z M10.388 14.743L10.893 14.204L11.399 13.683L11.907 13.177L12.417 12.685L12.93 12.206L13.448 11.739L13.972 11.282L14.501 10.833L15.038 10.392L15.583 9.957L16.138 9.527L16.702 9.1L17.278 8.675L17.865 8.251A0.8 0.8 0 0 0 16.935 6.949L16.334 7.383L15.745 7.818L15.165 8.257L14.594 8.7L14.032 9.148L13.477 9.604L12.928 10.068L12.386 10.542L11.849 11.027L11.316 11.524L10.787 12.034L10.26 12.559L9.736 13.1L9.212 13.657A0.8 0.8 0 0 0 10.388 14.743Z" />
+        <path
+            android:fillColor="#00000000"
+            android:strokeColor="#FFFFFFFF"
+            android:strokeWidth="2.4"
+            android:strokeLineCap="round"
+            android:pathData="M2 21c0-3 1.9-5.5 6-7" />
+    </group>
+</vector>

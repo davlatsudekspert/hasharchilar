@@ -67,7 +67,7 @@ export function useDebounced(value, ms = 300) {
 
 export function SearchField({ value, onChange, placeholder, label }) {
   return (
-    <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-white px-3.5 py-2.5 text-slate-500 ring-1 ring-slate-200 transition focus-within:ring-2 focus-within:ring-emerald-500">
+    <label className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl bg-white px-3.5 py-2.5 text-slate-500 ring-1 ring-slate-200 transition focus-within:ring-2 focus-within:ring-brand-500">
       <SearchIcon className="h-[18px] w-[18px] shrink-0" />
       <input
         type="search"
@@ -122,7 +122,7 @@ export function RowsSkeleton({ rows = 4, h = 'h-[84px]' }) {
 export function Badge({ tone = 'slate', children, title }) {
   const tones = {
     slate: 'bg-slate-100 text-slate-700',
-    emerald: 'bg-emerald-100 text-emerald-800',
+    emerald: 'bg-brand-100 text-brand-800',
     amber: 'bg-amber-100 text-amber-900',
     red: 'bg-red-100 text-red-700',
     sky: 'bg-sky-100 text-sky-800',

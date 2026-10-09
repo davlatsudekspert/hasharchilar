@@ -4,12 +4,18 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { adminRoutes } from './admin.js';
 import { authRoutes, optionalAuth } from './auth.js';
+import { checkinRoutes } from './checkin.js';
 import { DoDatabase } from './d1-adapter.js';
 import { emailEnabled } from './email.js';
 import { HasharDB } from './do-db.js';
 import { geoRoutes } from './geo.js';
 import { getStats, hasharRoutes } from './hashars.js';
 import { mediaRoutes } from './media.js';
+import { notifyRoutes } from './notify.js';
+import { providersOf } from './payconfig.js';
+import { paymentRoutes } from './payments.js';
+import { saveRoutes } from './saves.js';
+import { getSettings } from './settings.js';
 import { socialRoutes } from './social.js';
 import { HttpError } from './validate.js';
 
@@ -71,12 +77,25 @@ app.use('/api/*', optionalAuth);
 // ---------- Marshrutlar ----------
 
 app.get('/api/health', (c) => c.json({ ok: true }));
-// Mijoz sozlamalari: email bilan ro'yxat yoqilganmi (RESEND_API_KEY yoki EMAIL_MOCK)
-app.get('/api/config', (c) => c.json({ email_enabled: emailEnabled(c.env) }));
+// Mijoz sozlamalari: email bilan ro'yxat yoqilganmi (RESEND_API_KEY yoki EMAIL_MOCK); v4: hashar e'lon qilish
+// narxi (so'm; 0 — bepul), sozlangan to'lov usullari va qo'lda to'lov izohi
+app.get('/api/config', async (c) => {
+  const s = await getSettings(c.env.DB);
+  return c.json({
+    email_enabled: emailEnabled(c.env),
+    hashar_fee: s.hashar_fee,
+    payments: providersOf(c.env),
+    manual_payment_note: s.manual_payment_note,
+  });
+});
 app.get('/api/stats', getStats);
 app.route('/api', authRoutes); // /api/auth/*, /api/me, /api/me/email/*
 app.route('/api/hashars', hasharRoutes);
 app.route('/api', socialRoutes); // /api/hashars/:id/comments, /api/comments/:id, /api/users/:id, /api/leaderboard
+app.route('/api', paymentRoutes); // /api/hashars/:id/payment, /api/payments/payme, /api/payments/click/*
+app.route('/api', saveRoutes); // /api/hashars/:id/save, /api/me/saves
+app.route('/api', notifyRoutes); // /api/me/notifications, /unread-count, /read
+app.route('/api', checkinRoutes); // /api/hashars/:id/checkin-code, /checkin, /checkins
 app.route('/api/geo', geoRoutes); // /api/geo/search, /api/geo/reverse (Nominatim proksi + kesh)
 app.route('/api', mediaRoutes); // /api/media/*, /api/app, /api/app/download
 app.route('/api/admin', adminRoutes); // admin panel (faqat administratorlar)

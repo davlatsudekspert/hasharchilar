@@ -13,6 +13,8 @@ const ROUTES = [
   ['user', /^\/u\/(\d+)$/],
   ['about', /^\/haqida$/],
   ['login', /^\/kirish$/],
+  ['notifications', /^\/bildirishnomalar$/],
+  ['payment', /^\/tolov\/(\d+)$/],
 ];
 
 /** Joriy manzil admin panelmi (#admin yoki #/admin). */
@@ -63,6 +65,7 @@ if (typeof window !== 'undefined') {
 }
 const scrollPositions = new Map();
 const listeners = new Set();
+let navigated = false; // ilova ichida kamida bitta sahifa o'tishi bo'lganmi (birinchi yuklash emas)
 
 function emit() {
   listeners.forEach((fn) => fn());
@@ -88,8 +91,30 @@ function onHashChange() {
     }
   }
   if (next.hash === current.hash) return;
-  current = next;
-  emit();
+  const commit = () => {
+    current = next;
+    navigated = true;
+    emit();
+  };
+  // Sahifa o'tishi animatsiyasi (View Transitions) — App ro'yxatdan o'tkazadi; bo'lmasa darhol
+  if (transitionHook) transitionHook(next, kind === 'push' ? 'forward' : kind === 'replace' ? 'replace' : 'back', commit);
+  else commit();
+}
+
+// Oldindan yuklash ilgagi (src/lib/pages.js ro'yxatdan o'tkazadi): havola ustiga kelganda / bosilganda
+let prefetcher = null;
+export function setPrefetcher(fn) {
+  prefetcher = fn;
+}
+/** "/hashar/5" sahifasining kodi va ma'lumotini oldindan yuklaydi (xato e'tiborsiz). */
+export function prefetch(to) {
+  if (prefetcher && to) prefetcher(to);
+}
+
+// O'tish ilgagi: (keyingi marshrut, yo'nalish 'forward'|'back'|'replace', commit) — commit() ni o'zi chaqiradi
+let transitionHook = null;
+export function setTransitionHook(fn) {
+  transitionHook = fn;
 }
 
 if (typeof window !== 'undefined') {
@@ -110,6 +135,8 @@ function subscribe(fn) {
 
 export const getRoute = () => current;
 export const navWasPop = () => lastWasPop;
+/** Joriy sahifa ilova ichidagi o'tish natijasimi (false — ilova shu sahifa bilan ochilgan). */
+export const hasNavigated = () => navigated;
 export const savedScroll = (hash) => scrollPositions.get(hash) || 0;
 
 /** React hook: joriy marshrut. */

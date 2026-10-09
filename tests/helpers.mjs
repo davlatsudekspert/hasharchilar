@@ -56,12 +56,17 @@ export function makePng(w, h, [r, g, b]) {
 export const PNG_BEFORE = makePng(4, 3, [120, 113, 108]);
 export const PNG_AFTER = makePng(4, 3, [5, 150, 105]);
 
-/** fetch o'rami: JSON/FormData, token va IP. */
-export async function api(path, { method = 'GET', token, ip, json, form, headers = {}, oldClient = false } = {}) {
+/** Joriy mijoz versiyasi (src/lib/api.js CLIENT_VERSION). */
+export const CLIENT_VERSION = 4;
+
+/**
+ * fetch o'rami: JSON/FormData, token va IP. Token bilan — joriy mijoz kabi `?client=4`;
+ * `client: 3` — o'rnatilgan eski v3 APK; `oldClient` — belgisiz eski v2 APK.
+ */
+export async function api(path, { method = 'GET', token, ip, json, form, headers = {}, oldClient = false, client = CLIENT_VERSION } = {}) {
   const h = { 'cf-connecting-ip': ip || randomIp(), ...headers };
   if (token) h.authorization = `Bearer ${token}`;
-  // v3 mijoz (src/lib/api.js) kabi `?client=3`; oldClient — belgisiz eski v2 APK
-  if (token && !oldClient) path += `${path.includes('?') ? '&' : '?'}client=3`;
+  if (token && !oldClient) path += `${path.includes('?') ? '&' : '?'}client=${client}`;
   let body;
   if (json !== undefined) {
     h['content-type'] = 'application/json';
@@ -165,5 +170,58 @@ export async function adminLogin() {
   const r = await api('/api/auth/login', { method: 'POST', json: { phone: ADMIN_PHONE, password: ADMIN_PASSWORD } });
   assert.equal(r.status, 200, `admin test hisobiga kirib bo'lmadi: ${JSON.stringify(r.data)}`);
   if (!r.data.user.email_verified) r.data.user = await verifyEmail(r.data.token, randomEmail('admin'));
+  return r.data;
+}
+
+/** Shu jarayon uchun bitta admin sessiyasi (kirish limiti — telefon bo'yicha 10 urinish / 15 daqiqa). */
+let adminSession = null;
+export async function asAdmin() {
+  adminSession ??= await adminLogin();
+  return adminSession;
+}
+
+// ---------- v4: hashar narxi va to'lov provayderlari ----------
+
+/**
+ * Hashar e'lon qilish narxini (so'm) admin sozlamasi orqali o'rnatadi (0 — bepul: yangi hasharlar darhol
+ * ommaviy). v3 testlari hasharlar darhol ko'rinishini kutadi, shuning uchun ular boshida setFee(0) chaqiriladi.
+ */
+export async function setFee(fee, extra = {}) {
+  const admin = await asAdmin();
+  const r = await api('/api/admin/settings', { method: 'POST', token: admin.token, json: { hashar_fee: fee, ...extra } });
+  assert.equal(r.status, 200, `admin settings: ${JSON.stringify(r.data)}`);
+  assert.equal(r.data.hashar_fee, fee);
+  return r.data;
+}
+
+/**
+ * SOXTA to'lov kalitlari (haqiqiy emas) — server aynan shular bilan ishga tushgan bo'lishi kerak:
+ *   --var PAYME_MERCHANT_ID:hc-test-merchant-0001 --var PAYME_KEY:hc-test-payme-key
+ *   --var CLICK_SERVICE_ID:10001 --var CLICK_MERCHANT_ID:20002 --var CLICK_SECRET_KEY:hc-test-click-secret
+ * Boshqa qiymatlar bilan: TEST_PAYME_KEY=... va h.k. Sozlanmagan bo'lsa Payme/Click testlari o'tkaziladi
+ * (REQUIRE_PAYMENTS=1 bo'lsa — xato).
+ */
+export const PAY_TEST = {
+  paymeMerchant: process.env.TEST_PAYME_MERCHANT_ID || 'hc-test-merchant-0001',
+  paymeKey: process.env.TEST_PAYME_KEY || 'hc-test-payme-key',
+  clickService: process.env.TEST_CLICK_SERVICE_ID || '10001',
+  clickMerchant: process.env.TEST_CLICK_MERCHANT_ID || '20002',
+  clickSecret: process.env.TEST_CLICK_SECRET_KEY || 'hc-test-click-secret',
+};
+
+/** Toshkent vaqti bo'yicha hozirdan `minutes` daqiqa keyingi 'YYYY-MM-DDTHH:MM'. */
+export function tashkentInMinutes(minutes) {
+  return new Date(Date.now() + 5 * 3600e3 + minutes * 60e3).toISOString().slice(0, 16);
+}
+
+/** 'YYYY-MM-DDTHH:MM' (Toshkent) → unix ms. */
+export function tashkentToMs(dt) {
+  return Date.parse(`${dt}:00Z`) - 5 * 3600e3;
+}
+
+/** Joriy foydalanuvchining bildirishnomalari (birinchi sahifa). */
+export async function notifications(token, query = '') {
+  const r = await api(`/api/me/notifications${query}`, { token });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
   return r.data;
 }

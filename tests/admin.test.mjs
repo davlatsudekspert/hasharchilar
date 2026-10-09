@@ -6,7 +6,10 @@ import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ADMIN_PHONE, BASE, PNG_AFTER, RUN, adminLogin, api, hasharForm, register } from './helpers.mjs';
+import { ADMIN_PHONE, BASE, PNG_AFTER, RUN, api, asAdmin, hasharForm, register, setFee } from './helpers.mjs';
+
+// v4: bu fayldagi hasharlar darhol e'lon qilinsin (narx 0 — bepul); to'lov testlari: tests/payments.suite.mjs
+await setFee(0);
 
 // O'tmish sanasini API orqali qo'yib bo'lmaydi — faqat lokal D1 ga `wrangler d1 execute` (DO rejimida o'tkaziladi)
 const CAN_D1_EXEC =
@@ -30,7 +33,7 @@ describe('Admin panel', () => {
   let plain; // oddiy foydalanuvchi
 
   before(async () => {
-    admin = await adminLogin();
+    admin = await asAdmin();
     plain = await register(`Oddiy ${RUN}`);
   });
 

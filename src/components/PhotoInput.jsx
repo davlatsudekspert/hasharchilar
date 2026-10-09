@@ -11,7 +11,7 @@ import { Spinner } from './ui.jsx';
 const isTouch = () =>
   IS_NATIVE || (typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 
-const focusRing = 'has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-emerald-500 has-[input:focus-visible]:ring-offset-2';
+const focusRing = 'has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand-500 has-[input:focus-visible]:ring-offset-2';
 
 function FilePick({ capture, onPick, disabled, label, className, children }) {
   return (
@@ -195,7 +195,7 @@ export default function PhotoInput({ value, onChange, onBusyChange, title, hint,
           label={title}
           className={cx(
             'flex flex-col items-center gap-2 rounded-3xl border-2 border-dashed px-6 py-10 text-center transition',
-            drag ? 'border-emerald-500 bg-brand-soft' : 'border-brand-line bg-brand-soft/50 hover:bg-brand-soft',
+            drag ? 'border-brand-500 bg-brand-soft' : 'border-brand-line bg-brand-soft/50 hover:bg-brand-soft',
           )}
         >
           <div

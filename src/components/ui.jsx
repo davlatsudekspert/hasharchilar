@@ -2,12 +2,12 @@
 import { useState } from 'react';
 import { mediaUrl } from '../lib/config.js';
 import { categoryOf } from '../lib/meta.js';
-import { goBack, navigate } from '../lib/router.js';
+import { goBack, navigate, prefetch } from '../lib/router.js';
 import { cx, hashIndex, initials } from '../lib/utils.js';
 import { AlertIcon, ArrowLeftIcon, CATEGORY_ICONS, CheckIcon, LeafIcon, RefreshIcon } from './icons.jsx';
 
 export const inputCls =
-  'w-full rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink placeholder:text-ink-3 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 dark:focus:ring-emerald-400/20';
+  'w-full rounded-2xl border border-line bg-surface px-4 py-3 text-base text-ink placeholder:text-ink-3 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:focus:ring-brand-400/20';
 
 export const labelCls = 'mb-1.5 block text-sm font-semibold text-ink-2';
 
@@ -17,19 +17,20 @@ const btnBase =
 export const btn = {
   // Asosiy CTA (amber) — faqat eng muhim harakatlar uchun
   cta: `${btnBase} bg-gradient-to-b from-amber-300 to-amber-400 text-slate-950 shadow-cta hover:from-amber-200 hover:to-amber-300`,
-  primary: `${btnBase} bg-emerald-600 text-white shadow-sm shadow-emerald-900/10 hover:bg-emerald-700 dark:bg-emerald-500 dark:text-emerald-950 dark:hover:bg-emerald-400`,
-  soft: `${btnBase} bg-brand-soft text-brand hover:bg-emerald-100 dark:hover:bg-emerald-400/20`,
+  primary: `${btnBase} bg-brand-600 text-white shadow-sm shadow-brand-900/10 hover:bg-brand-700 dark:bg-primary dark:text-brand-950 dark:hover:bg-primary-hover`,
+  soft: `${btnBase} bg-brand-soft text-brand hover:bg-brand-100 dark:hover:bg-brand-400/20`,
   ghost: `${btnBase} bg-surface-2 text-ink-2 hover:bg-surface-3 hover:text-ink`,
   outline: `${btnBase} border border-line bg-surface text-ink-2 hover:bg-surface-2 hover:text-ink`,
-  white: `${btnBase} bg-white text-emerald-900 shadow-sm hover:bg-emerald-50`,
+  white: `${btnBase} bg-white text-brand-900 shadow-sm hover:bg-brand-50`,
   glass: `${btnBase} bg-white/10 text-white ring-1 ring-white/25 backdrop-blur hover:bg-white/20`,
   danger: `${btnBase} bg-red-600 text-white hover:bg-red-700`,
-  dangerSoft: `${btnBase} bg-red-50 text-red-700 hover:bg-red-100 dark:bg-red-500/10 dark:text-red-300 dark:hover:bg-red-500/20`,
+  // O'chirish kabi xavfli harakat: aksentga bog'liq emas — chegarali, neytral fon, qizil matn (asosiy tugmaga o'xshamaydi)
+  dangerSoft: `${btnBase} border border-red-200 bg-surface text-red-700 hover:border-red-300 hover:bg-red-50 dark:border-red-400/30 dark:bg-transparent dark:text-red-300 dark:hover:border-red-400/50 dark:hover:bg-red-500/10`,
 };
 
 export const card = 'rounded-3xl border border-line bg-surface shadow-soft';
 
-/** Status badge: "Kutilmoqda" (amber) / "Bajarildi" (emerald). */
+/** Status badge: "Kutilmoqda" (amber) / "Bajarildi" (aksent). */
 /** Holat belgisi. status: 'PENDING' | 'COMPLETED' | 'PAST' (sanasi o'tgan, yakunlanmagan — utils.statusOf). */
 export function StatusBadge({ status, className }) {
   const done = status === 'COMPLETED';
@@ -39,14 +40,14 @@ export function StatusBadge({ status, className }) {
       className={cx(
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold',
         done
-          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300'
+          ? 'bg-brand-100 text-brand-800 dark:bg-brand-400/15 dark:text-brand-300'
           : past
             ? 'bg-slate-200 text-slate-700 dark:bg-slate-400/15 dark:text-slate-300'
             : 'bg-amber-100 text-amber-900 dark:bg-amber-400/15 dark:text-amber-300',
         className,
       )}
     >
-      <span className={cx('h-1.5 w-1.5 rounded-full', done ? 'bg-emerald-500' : past ? 'bg-slate-400' : 'bg-amber-500')} />
+      <span className={cx('h-1.5 w-1.5 rounded-full', done ? 'bg-brand-500' : past ? 'bg-slate-400' : 'bg-amber-500')} />
       {done ? 'Bajarildi' : past ? "O'tib ketgan" : 'Kutilmoqda'}
     </span>
   );
@@ -65,7 +66,7 @@ export function CategoryChip({ category, className, short }) {
 }
 
 const AVATAR_BG = [
-  'from-emerald-400 to-teal-600',
+  'from-green-400 to-teal-600',
   'from-sky-400 to-indigo-500',
   'from-amber-400 to-orange-500',
   'from-rose-400 to-pink-600',
@@ -157,7 +158,7 @@ export function Progress({ value, max, className, tone = 'emerald' }) {
       <div
         className={cx(
           'h-full rounded-full bg-gradient-to-r transition-[width] duration-700',
-          tone === 'amber' ? 'from-amber-300 to-amber-500' : 'from-emerald-400 to-emerald-600',
+          tone === 'amber' ? 'from-amber-300 to-amber-500' : 'from-brand-400 to-brand-600',
         )}
         style={{ width: `${pct}%` }}
       />
@@ -208,7 +209,7 @@ export function Chip({ active, onClick, children, icon: Icon, className }) {
       className={cx(
         'inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-semibold transition active:scale-[.97]',
         active
-          ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-900/20 dark:bg-emerald-500 dark:text-emerald-950'
+          ? 'bg-brand-600 text-white shadow-sm shadow-brand-900/20 dark:bg-primary dark:text-brand-950'
           : 'bg-surface text-ink-2 ring-1 ring-line hover:bg-surface-2 hover:text-ink',
         className,
       )}
@@ -223,8 +224,8 @@ export function Chip({ active, onClick, children, icon: Icon, className }) {
 export function EmptyState({ title, text, action, icon: Icon = LeafIcon, className }) {
   return (
     <div className={cx('relative overflow-hidden rounded-3xl border border-dashed border-line-strong bg-surface px-6 py-12 text-center', className)}>
-      <div className="pointer-events-none absolute -top-16 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full bg-emerald-400/10 blur-3xl" />
-      <span className="relative mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-emerald-600 ring-1 ring-emerald-200 dark:from-emerald-400/10 dark:to-emerald-400/5 dark:text-emerald-300 dark:ring-emerald-400/20">
+      <div className="pointer-events-none absolute -top-16 left-1/2 h-40 w-72 -translate-x-1/2 rounded-full bg-brand-400/10 blur-3xl" />
+      <span className="relative mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-brand-50 to-brand-100 text-brand-600 ring-1 ring-brand-200 dark:from-brand-400/10 dark:to-brand-400/5 dark:text-brand-300 dark:ring-brand-400/20">
         <Icon className="h-8 w-8" />
       </span>
       <h3 className="relative mt-4 text-lg font-extrabold text-ink">{title}</h3>
@@ -334,12 +335,16 @@ export function PageHeader({ title, subtitle, back, action, icon: Icon }) {
   );
 }
 
-/** Ichki havola (hash router). */
+/** Ichki havola (hash router). Ustiga kelganda / bosila boshlaganda sahifa kodi va ma'lumoti oldindan yuklanadi. */
 export function Link({ to, children, className, onClick, ...rest }) {
+  const warm = () => prefetch(to);
   return (
     <a
       href={`#${to}`}
       className={className}
+      onPointerEnter={warm}
+      onTouchStart={warm}
+      onFocus={warm}
       onClick={(e) => {
         onClick?.(e);
         if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
@@ -355,7 +360,7 @@ export function Link({ to, children, className, onClick, ...rest }) {
 
 /** Kichik tasdiq belgisi. */
 export const Tick = () => (
-  <span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-white">
+  <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-500 text-white">
     <CheckIcon className="h-3 w-3" strokeWidth={3.5} />
   </span>
 );

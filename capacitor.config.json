@@ -31,6 +31,10 @@
       "insetsHandling": "css",
       "initialViewportFitValueHint": "cover",
       "style": "DEFAULT"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_hashar",
+      "iconColor": "#059669"
     }
   }
 }

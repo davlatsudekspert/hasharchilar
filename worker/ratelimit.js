@@ -210,3 +210,38 @@ export function limitOtpIp(c) {
     "Juda ko'p kod so'raldi. Bir soatdan so'ng qayta urinib ko'ring",
   );
 }
+
+// ---------- v4: saqlash, bildirishnomalar, davomat ----------
+
+/** Saqlash / saqlanganlardan olib tashlash: foydalanuvchi bo'yicha 120 ta / soat. */
+export function limitSave(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `save:${userId}`,
+    120,
+    60 * 60,
+    "Juda ko'p saqlash amali. Birozdan so'ng qayta urinib ko'ring",
+  );
+}
+
+/** Bildirishnomalarni o'qilgan deb belgilash: foydalanuvchi bo'yicha 300 ta / soat. */
+export function limitNotifyRead(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `notif-read:${userId}`,
+    300,
+    60 * 60,
+    "Juda ko'p so'rov. Birozdan so'ng qayta urinib ko'ring",
+  );
+}
+
+/** QR davomat kodi yuborish: foydalanuvchi bo'yicha 20 urinish / soat (kodni taxmin qilishdan himoya). */
+export function limitCheckin(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `checkin:${userId}`,
+    20,
+    60 * 60,
+    "Juda ko'p urinish. Birozdan so'ng qayta urinib ko'ring",
+  );
+}

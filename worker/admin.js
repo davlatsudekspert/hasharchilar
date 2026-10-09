@@ -2,8 +2,13 @@
 // Hammasi requireAdmin ortida: mehmon → 401, oddiy foydalanuvchi → 403.
 import { Hono } from 'hono';
 import { adminPhones, isAdmin, isEnvAdmin, requireAuth } from './auth.js';
+import { nowMs } from './clock.js';
 import { HASHAR_SELECT, tashkentNow, toDto } from './hashars.js';
 import { deletePhotos } from './media.js';
+import { notifyOwnerStmt } from './notify.js';
+import { PAID_SQL, paymeConfig, providersOf } from './payconfig.js';
+import { paymentDto, waiveStmts } from './payledger.js';
+import { getSettings, parseFee, parseNote, setSettingStmt } from './settings.js';
 import { deleteComment } from './social.js';
 import {
   ConflictError,
@@ -90,9 +95,9 @@ function guardTarget(c, target, selfMessage) {
 
 // ---------- Hasharlar ----------
 
-/** HasharDTO + creator.phone (admin hamma telefonni ko'radi). */
+/** HasharDTO + creator.phone + payment_status (admin hamma telefonni ko'radi). */
 function adminHasharDto(r, uid) {
-  const dto = toDto(r, uid);
+  const dto = toDto(r, uid, { admin: true });
   dto.creator = { ...dto.creator, phone: r.creator_phone };
   return dto;
 }
@@ -122,7 +127,10 @@ adminRoutes.get('/overview', async (c) => {
            (SELECT COUNT(*) FROM hashar_media) AS media,
            (SELECT COUNT(*) FROM comments) AS comments,
            (SELECT COUNT(*) FROM users WHERE created_at >= datetime('now', '-7 days')) AS signups_7d,
-           (SELECT COUNT(*) FROM hashars WHERE created_at >= datetime('now', '-7 days')) AS hashars_7d`,
+           (SELECT COUNT(*) FROM hashars WHERE created_at >= datetime('now', '-7 days')) AS hashars_7d,
+           (SELECT COUNT(*) FROM hashars WHERE payment_status = 'unpaid') AS unpaid,
+           (SELECT COUNT(*) FROM payments p WHERE ${PAID_SQL}) AS payments_paid,
+           (SELECT COALESCE(SUM(p.amount), 0) / 100 FROM payments p WHERE ${PAID_SQL}) AS revenue`,
       )
       .bind(phones),
     db.prepare(`${HASHAR_SELECT} ORDER BY h.id DESC LIMIT ${RECENT}`).bind(uid),
@@ -215,14 +223,17 @@ adminRoutes.delete('/users/:id', async (c) => {
   guardTarget(c, await loadUser(db, id), "O'zingizni o'chira olmaysiz");
   const own = 'SELECT id FROM hashars WHERE creator_id = ?1';
   // Bitta tranzaksiya; rasm kalitlari ham shu tranzaksiya ichida olinadi (orada qo'shilgani qolib ketmasin)
-  // Bog'liq qatorlar (izohlar ham) oldindan o'chiriladi: meta.changes FK kaskadi bilan ortib ketmasin
-  const [media, , , , , , , delUser] = await db.batch([
+  // Bog'liq qatorlar (izohlar, saqlanganlar, bildirishnomalar ham) oldindan o'chiriladi: meta.changes FK kaskadi
+  // bilan ortib ketmasin. To'lovlar (payments) qoladi — moliyaviy tarix.
+  const [media, , , , , , , , , delUser] = await db.batch([
     db
       .prepare(
         `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
          UNION ALL SELECT avatar_key FROM users WHERE id = ?1 AND avatar_key IS NOT NULL`,
       )
       .bind(id),
+    db.prepare(`DELETE FROM saves WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
+    db.prepare(`DELETE FROM notifications WHERE hashar_id IN (${own}) OR user_id = ?1 OR actor_id = ?1`).bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
     db.prepare('DELETE FROM email_otps WHERE user_id = ?1 OR email = (SELECT email FROM users WHERE id = ?1)').bind(id),
     db.prepare(`DELETE FROM comments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
@@ -249,6 +260,13 @@ adminRoutes.get('/hashars', async (c) => {
     where.push('h.status = ?');
     params.push(status);
   }
+  // v4: ?payment=unpaid|paid|waived
+  const payment = c.req.query('payment') || null;
+  if (payment) {
+    if (!['unpaid', 'paid', 'waived'].includes(payment)) throw new ValidationError("To'lov holati qiymati noto'g'ri");
+    where.push('h.payment_status = ?');
+    params.push(payment);
+  }
   const q = searchQuery(c);
   if (q) {
     const like = likePattern(q);
@@ -269,8 +287,10 @@ adminRoutes.get('/hashars', async (c) => {
 adminRoutes.delete('/hashars/:id', async (c) => {
   const db = c.env.DB;
   const id = parseId(c.req.param('id'), HASHAR_NOT_FOUND);
-  const [media, , , , delHashar] = await db.batch([
+  const [media, , , , , , delHashar] = await db.batch([
     db.prepare('SELECT r2_key FROM hashar_media WHERE hashar_id = ?1').bind(id),
+    db.prepare('DELETE FROM saves WHERE hashar_id = ?1').bind(id),
+    db.prepare('DELETE FROM notifications WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM comments WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM hashar_media WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM volunteers WHERE hashar_id = ?1').bind(id),
@@ -286,4 +306,143 @@ adminRoutes.delete('/comments/:id', async (c) => {
   const id = parseId(c.req.param('id'), COMMENT_NOT_FOUND);
   if (!(await deleteComment(c.env.DB, id))) throw new NotFoundError(COMMENT_NOT_FOUND);
   return c.json({ ok: true });
+});
+
+// ---------- v4: to'lovlar va sozlamalar ----------
+
+/** Sozlamalar javobi (ichki qiymatlar — masalan checkin_secret — hech qachon qaytarilmaydi). */
+async function settingsResponse(c) {
+  const s = await getSettings(c.env.DB);
+  return {
+    hashar_fee: s.hashar_fee,
+    manual_payment_note: s.manual_payment_note,
+    payments: providersOf(c.env),
+    payme_test_mode: paymeConfig(c.env).testMode,
+  };
+}
+
+// GET /api/admin/settings → {hashar_fee, manual_payment_note, payments: {payme, click, manual}, payme_test_mode}
+adminRoutes.get('/settings', async (c) => c.json(await settingsResponse(c)));
+
+// POST /api/admin/settings — {hashar_fee?: so'm (0 — bepul), manual_payment_note?: ≤ 500 belgi} → sozlamalar.
+// Narx o'zgarishi faqat yangi hasharlar va keyingi to'lovlarga ta'sir qiladi (to'lanmaganlar ommaviy e'lon qilinmaydi —
+// spam himoyasi; narx 0 bo'lsa egasi to'lov sahifasini ochganda o'zi bepul e'lon qilinadi — worker/payments.js,
+// yoki admin mark-paid {waive: true} bilan e'lon qiladi).
+adminRoutes.post('/settings', async (c) => {
+  const body = await readJson(c);
+  const db = c.env.DB;
+  const stmts = [];
+  if (body.hashar_fee !== undefined) stmts.push(setSettingStmt(db, 'hashar_fee', parseFee(body.hashar_fee, 'Hashar narxi')));
+  if (body.manual_payment_note !== undefined) {
+    stmts.push(setSettingStmt(db, 'manual_payment_note', parseNote(body.manual_payment_note, "Qo'lda to'lov izohi")));
+  }
+  if (!stmts.length) throw new ValidationError("O'zgartirish uchun hashar_fee yoki manual_payment_note yuboring");
+  await db.batch(stmts);
+  return c.json(await settingsResponse(c));
+});
+
+// GET /api/admin/payments?provider=&status=&hashar_id=&q=&offset=&limit= — to'lovlar, yangilari birinchi
+// → {items: [PaymentDTO + provider_tx_id, hashar, user, admin_id], total, summary: {paid_count, paid_amount}}
+const PAYMENT_STATUS_SQL = {
+  pending: "((p.provider = 'payme' AND p.state = 1) OR (p.provider = 'click' AND p.state = 0))",
+  paid: PAID_SQL,
+  cancelled: '(p.state = -1)',
+  refunded: '(p.state = -2)',
+};
+adminRoutes.get('/payments', async (c) => {
+  const db = c.env.DB;
+  const { offset, limit } = paging(c);
+  const where = [];
+  const params = [];
+  const provider = c.req.query('provider') || null;
+  if (provider) {
+    if (!['payme', 'click', 'manual'].includes(provider)) throw new ValidationError("Provayder qiymati noto'g'ri");
+    where.push('p.provider = ?');
+    params.push(provider);
+  }
+  const status = c.req.query('status') || null;
+  if (status) {
+    // Faqat o'z kalitlari ('constructor', '__proto__' kabi meros kalitlar — 400, 500 emas)
+    if (!Object.hasOwn(PAYMENT_STATUS_SQL, status)) throw new ValidationError("Holat qiymati noto'g'ri (pending, paid, cancelled, refunded)");
+    where.push(PAYMENT_STATUS_SQL[status]);
+  }
+  const hid = c.req.query('hashar_id');
+  if (hid) {
+    where.push('p.hashar_id = ?');
+    params.push(parseId(hid, HASHAR_NOT_FOUND));
+  }
+  const q = searchQuery(c);
+  if (q) {
+    const like = likePattern(q);
+    where.push("(h.title LIKE ? ESCAPE '\\' OR u.name LIKE ? ESCAPE '\\' OR u.phone LIKE ? ESCAPE '\\' OR p.provider_tx_id LIKE ? ESCAPE '\\')");
+    params.push(like, like, like, like);
+  }
+  const cond = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  const from = 'FROM payments p LEFT JOIN hashars h ON h.id = p.hashar_id LEFT JOIN users u ON u.id = p.user_id';
+  const [list, total, sum] = await db.batch([
+    db
+      .prepare(
+        `SELECT p.*, h.title AS hashar_title, h.payment_status AS hashar_payment_status, u.name AS user_name,
+                u.phone AS user_phone
+         ${from} ${cond} ORDER BY p.id DESC LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, limit, offset),
+    db.prepare(`SELECT COUNT(*) AS n ${from} ${cond}`).bind(...params),
+    db.prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(p.amount), 0) AS t ${from} ${cond ? `${cond} AND` : 'WHERE'} ${PAID_SQL}`).bind(...params),
+  ]);
+  return c.json({
+    items: list.results.map((p) => ({
+      ...paymentDto(p),
+      provider_tx_id: p.provider_tx_id ?? null,
+      admin_id: p.admin_id ?? null,
+      hashar: { id: p.hashar_id, title: p.hashar_title ?? null, payment_status: p.hashar_payment_status ?? null, deleted: p.hashar_title == null },
+      user: p.user_id != null && p.user_name != null ? { id: p.user_id, name: p.user_name, phone: p.user_phone } : null,
+    })),
+    total: total.results[0].n,
+    summary: { paid_count: sum.results[0].n, paid_amount: Math.round(sum.results[0].t / 100) },
+  });
+});
+
+// POST /api/admin/hashars/:id/mark-paid — {note?, amount? (so'm, standart — joriy narx), waive?: true}
+// Qo'lda tasdiqlash: payments (provider='manual', state 1) + hashar 'paid' + egasiga bildirishnoma.
+// waive: true (yoki summa 0 — masalan narx 0 bo'lganda) — to'lovsiz bepul e'lon qilish ('waived', 0 so'mlik
+// "to'lov" yozilmaydi). Hashar to'lanmagan bo'lmasa 409.
+adminRoutes.post('/hashars/:id/mark-paid', async (c) => {
+  const db = c.env.DB;
+  const admin = c.get('user');
+  const id = parseId(c.req.param('id'), HASHAR_NOT_FOUND);
+  // Tana ixtiyoriy (bo'sh POST ham qabul qilinadi)
+  const body = Number(c.req.header('content-length') || 0) > 0 || /json/i.test(c.req.header('content-type') || '') ? await readJson(c) : {};
+  const note = parseNote(body.note, 'Izoh') || null;
+  const amount = body.waive === true ? 0 : body.amount === undefined ? null : parseFee(body.amount, "To'lov summasi");
+  const h = await db.prepare('SELECT id, payment_status FROM hashars WHERE id = ?1').bind(id).first();
+  if (!h) throw new NotFoundError(HASHAR_NOT_FOUND);
+  if (h.payment_status !== 'unpaid') throw new ConflictError("Bu hashar allaqachon to'langan yoki e'lon qilingan");
+  const paid = amount ?? (await getSettings(db)).hashar_fee;
+  const now = nowMs(c);
+  let upd;
+  let payment = null;
+  if (paid === 0) {
+    [upd] = await db.batch(waiveStmts(db, id));
+  } else {
+    const txId = `manual:${crypto.randomUUID()}`;
+    const marker = "EXISTS (SELECT 1 FROM payments WHERE provider = 'manual' AND provider_tx_id = ?2)";
+    let ins;
+    [ins, upd] = await db.batch([
+      db
+        .prepare(
+          `INSERT INTO payments (hashar_id, user_id, provider, amount, state, provider_tx_id, create_time, perform_time, note, admin_id)
+           SELECT h.id, h.creator_id, 'manual', ?3, 1, ?2, ?4, ?4, ?5, ?6 FROM hashars h
+           WHERE h.id = ?1 AND h.payment_status = 'unpaid'
+           RETURNING *`,
+        )
+        .bind(id, txId, paid * 100, now, note, admin.id),
+      db.prepare(`UPDATE hashars SET payment_status = 'paid' WHERE id = ?1 AND payment_status = 'unpaid' AND ${marker}`).bind(id, txId),
+      notifyOwnerStmt(db, { type: 'payment_confirmed', hasharId: id, extra: { provider: 'manual', amount: paid }, cond: marker, params: [txId] }),
+    ]);
+    payment = ins.results[0] ? paymentDto(ins.results[0]) : null;
+  }
+  if (upd.meta.changes !== 1) throw new ConflictError("Bu hashar allaqachon to'langan yoki e'lon qilingan");
+  const row = await db.prepare(`${HASHAR_SELECT} WHERE h.id = ?`).bind(admin.id, id).first();
+  return c.json({ ok: true, hashar: adminHasharDto(row, admin.id), payment });
 });

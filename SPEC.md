@@ -147,7 +147,7 @@ Bloklangan foydalanuvchi: kirish → 403 "Hisobingiz bloklangan", token qabul qi
 | GET | `/api/admin/hashars?status=&q=&offset=&limit=` | `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | istalgan holat; R2 rasmlari ham → `{ok:true}` |
 
-| DELETE | `/api/admin/comments/:id` | istalgan izoh → `{ok:true}`; yo'q → 404 |
+| DELETE | `/api/admin/comments/:id` | istalgan izoh → `{ok:true}`; yo'q → 404 (bildirishnomalardagi parchasi ham o'chadi) |
 
 Admin `overview` da `comments` (izohlar soni) ham bor; `hashars` ro'yxatidagi DTO da `category`.
 
@@ -168,7 +168,7 @@ bitta emailga 5 / soat (barcha maqsadlar), bitta IP dan 20 / soat. Test uchun (f
 
 | Metod | Yo'l | Auth | Tavsif |
 |---|---|---|---|
-| GET | `/api/config` | – | `{email_enabled}` |
+| GET | `/api/config` | – | `{email_enabled}` (v4: `+ hashar_fee, payments, manual_payment_note` — 5.3) |
 | POST | `/api/auth/register/start` | – | `{name, phone, email, password}` → validatsiya (`parseName/parseEmail/parsePhone/parsePassword`), telefon yoki email band → 409, parol xeshi hozir hisoblanib kod payload'iga yoziladi → `{ok, email, expires_in: 600, resend_in: 60}` (+ `dev_code` faqat mock). Email o'chiq → 503 `"Email xizmati sozlanmagan"` |
 | POST | `/api/auth/register/verify` | – | `{email, code}` → noto'g'ri → 400 `"Kod noto'g'ri"` (urinish +1); eskirgan/o'lgan/ishlatilgan → 400 `"Kod eskirgan, yangisini so'rang"`; telefon/email qayta tekshiriladi (409); hisob `email`, `email_verified_at` bilan yaratiladi → 201 `{token, user}` |
 | POST | `/api/auth/register` | – | eski APK'lar: email yoqilgan bo'lsa 410 `{error: "Ilovani yangilang: ro'yxatdan o'tish endi email orqali", code: "email_required"}`, aks holda avvalgidek |
@@ -182,8 +182,8 @@ bitta emailga 5 / soat (barcha maqsadlar), bitta IP dan 20 / soat. Test uchun (f
 `{error: "Avval emailingizni tasdiqlang", code: "email_unverified"}`. Qo'llanadi: `POST /api/hashars`,
 `POST|DELETE /api/hashars/:id/join`, `POST /api/hashars/:id/complete`, `DELETE /api/hashars/:id`,
 `POST /api/hashars/:id/comments`. Kirish, ko'rish, `/api/me/*` (profil, parol, email) va `/api/admin/*` — cheklanmaydi.
-v3+ mijozlar token bilan so'rovlarda `?client=3` query yuboradi (`X-Client: hasharchilar/3` sarlavhasi ham qabul
-qilinadi). Query tanlangani: CORS preflight ro'yxati o'zgarmaydi, ya'ni yangi APK eski yoki orqaga qaytarilgan
+v3+ mijozlar token bilan so'rovlarda o'z versiyasini query'da yuboradi — v3: `?client=3`, v4: `?client=4`
+(`X-Client: hasharchilar/<n>` sarlavhasi ham qabul qilinadi). Query tanlangani: CORS preflight ro'yxati o'zgarmaydi, ya'ni yangi APK eski yoki orqaga qaytarilgan
 worker bilan ham ishlayveradi. Belgisiz (eski v2 APK — email oynasi yo'q) mijozga shu holatda 403
 `{error: "Ilovani yangilang: …", code: "app_update_required"}` qaytadi.
 
@@ -204,7 +204,7 @@ Admin `users` ro'yxati: `+ email, email_verified`, qidiruv emailni ham qamraydi;
 | POST | `/api/hashars/:id/join` | ✓ | joy to'lgan → 409 `"Joy qolmadi"` (shart INSERT ichida, bitta tranzaksiya); allaqachon a'zo → 200 |
 | GET | `/api/hashars/:id/comments` | ixt. | `[{id, body, created_at, user:{id,name,avatar_url}, is_mine}]` oxirgi 200 ta, eski → yangi; hashar yo'q → 404 |
 | POST | `/api/hashars/:id/comments` | ✓ | JSON `{body}`: tozalanadi (trim, boshqaruv belgilari), 1–500 belgi (code point) → 201 CommentDTO; 20 ta / soat / foydalanuvchi (429) |
-| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin → `{ok:true}`; begona → 403; yo'q → 404 |
+| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin → `{ok:true}`; begona → 403; yo'q → 404. Izohning `comment` bildirishnomalari (matn parchasi bilan) ham shu batch'da o'chadi |
 | GET | `/api/users/:id` | ixt. | `{id, name, bio, district, avatar_url, created_at, stats:{created, joined, completed}, hashars: HasharDTO[] (yaratganlari, oxirgi 20)}` — telefon hech qayerda yo'q |
 | POST | `/api/me/profile` | ✓ | multipart `name?` (2–60), `bio?` (≤ 300, ko'p qatorli), `district?` (≤ 60), `avatar?` (JPG/PNG/WebP ≤ 5 MB), `remove_avatar?=1` → `{user}`; yuborilmagan maydon o'zgarmaydi, hech narsa yo'q → 400; avatar almashsa/o'chsa eski R2 obyekti o'chadi; 20 ta / soat |
 | POST | `/api/me/password` | ✓ | JSON `{current_password, new_password}` → `{ok:true}`; joriy parol noto'g'ri → 401 `"Joriy parol noto'g'ri"` (joriy sessiya saqlanadi); yangi parol `parsePassword` (≥ 6); limit kirish bilan umumiy (IP 30/15 daq, telefon 10/15 daq); muvaffaqiyatda joriy sessiyadan boshqa barcha sessiyalar o'chadi |
@@ -236,6 +236,111 @@ Metodlar: GET, POST, DELETE, OPTIONS. Preflight 204.
 
 Xavfsizlik: barcha SQL bind parametrlar bilan; foydalanuvchi matni hech qachon HTML sifatida chiqarilmaydi;
 xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.error`).
+
+### 5.3. v4: e'lon to'lovi, saqlanganlar, bildirishnomalar, QR davomat (docs/V4_PLAN.md 3–4-bo'limlar)
+
+**Baza — `migrations/0005_v4.sql`** (DO rejimida to'la bazada qo'llanadi; `npm run test:storage` sinaydi):
+`hashars.payment_status TEXT NOT NULL DEFAULT 'paid' CHECK IN ('unpaid','paid','waived')` (mavjud hasharlar —
+`paid`), `volunteers.checked_in_at TEXT` (UTC), `payments` (tashqi kalitsiz — hashar/foydalanuvchi o'chsa ham tarix
+qoladi; `UNIQUE(provider, provider_tx_id)`; `amount` tiyinda; vaqtlar unix ms; qo'shimcha: `provider_time` — Payme
+`params.time`, `note`, `admin_id`), `settings(key, value)`, `saves(user_id, hashar_id, created_at)` (PK ikkalasi),
+`notifications(id, user_id, type, hashar_id, actor_id, data JSON, read_at, created_at)` + indekslar. Hashar yoki
+foydalanuvchi o'chirilganda uning `saves` va `notifications` qatorlari ham o'chiriladi (to'lovlar qoladi).
+
+**Narx va ko'rinish.** Narx — `settings.hashar_fee` (so'm, standart **5000**, 0 — bepul; admin o'zgartiradi).
+`POST /api/hashars`: narx > 0 → hashar `payment_status: 'unpaid'`, javobda `payment: {amount, payme_url?, click_url?,
+manual_note?}`; narx 0 → darhol `'paid'` (`payment` yo'q). Bitta egada bir vaqtda ≤ 5 ta to'lanmagan PENDING hashar
+(aks holda 409 `code: "unpaid_limit"`). To'lanmagan hashar:
+- `GET /api/hashars/:id`, izohlar, `GET /api/hashars/:id/payment` — faqat egasi va admin (boshqalarga **404**);
+- ro'yxat / xarita / qidiruv / `near` / `GET /api/users/:id` (hasharlar ro'yxati) — faqat egasining o'ziga
+  (admin ularni `GET /api/admin/hashars?payment=unpaid` da ko'radi);
+- `/api/stats`, `/api/leaderboard`, `users/:id` → `stats` — hech kimga hisoblanmaydi;
+- qo'shilish, saqlash, izoh (egasi/admindan boshqa), davomat — 404; yakunlash → 409 `code: "payment_required"`.
+Narx > 0 da hashar yaratish faqat v4+ mijozga (`?client=4`; to'lov sahifasi bor): eski v3/v2 APK — 403
+`{error: "Ilovani yangilang: hashar e'lon qilish endi to'lov orqali", code: "app_update_required"}`, hech narsa
+yozilmaydi (narx 0 da eski mijoz ham yarata oladi).
+Narx 0 ga o'tkazilsa mavjud to'lanmaganlar ommaviy e'lon qilinmaydi (spam himoyasi): egasi `GET /api/hashars/:id/payment`
+ni ochganda (narx 0 va hashar `unpaid` bo'lsa) u shu yerda `waived` + egasiga `published` bo'ladi (idempotent; admin
+ko'rishi e'lon qilmaydi); yoki admin `waive` qiladi. Narx 0 da to'lov qaytarilgan (Payme -2) hashar ham shunday.
+
+`HasharDTO` ga: `saved` (joriy foydalanuvchi saqlaganmi), `checked_in_at` (joriy foydalanuvchining O'Z davomati, ISO
+yoki null), `checked_in_count`, `payment_status` (faqat egasi va admin uchun; boshqalarda maydon yo'q). Tafsilotdagi
+`volunteers[]` da egasi/admin uchun `checked_in_at`. `GET /api/config` → `{email_enabled, hashar_fee, payments:
+{payme, click, manual: true}, manual_payment_note}`. Reyting: `+ checkins`, `score = completed*10 + joined*3 +
+created*5 + checkins*5`.
+
+| Metod | Yo'l | Auth | Tavsif |
+|---|---|---|---|
+| GET | `/api/hashars/:id/payment` | ✓ egasi/admin | `{hashar_id, status, amount, currency: 'UZS', providers, payme_url?, click_url?, manual_note?, history: PaymentDTO[]}` — havolalar faqat `unpaid` bo'lsa. `amount` (so'm): `unpaid` — joriy narx; `paid`/`waived` — oxirgi muvaffaqiyatli to'lov summasi, to'lov yozuvi bo'lmasa (bepul, v4 dan oldingi, `waived`) `null`. `PaymentDTO = {id, provider, amount, amount_tiyin, state, status: pending\|paid\|cancelled\|refunded, created_at, performed_at, cancelled_at, reason, note}` |
+| POST | `/api/payments/payme` | Basic `Paycom:<PAYME_KEY>` | Payme Merchant API (JSON-RPC 2.0), pastda |
+| POST | `/api/payments/click/prepare`, `/complete` | md5 imzo | Click Shop API, pastda |
+| GET/POST | `/api/admin/settings` | admin | `{hashar_fee, manual_payment_note, payments, payme_test_mode}`; POST `{hashar_fee?: 0–10 000 000 butun, manual_payment_note?: ≤ 500 belgi}` (hech biri yo'q / noto'g'ri → 400). Ichki `checkin_secret` hech qachon qaytarilmaydi |
+| GET | `/api/admin/payments?provider=&status=&hashar_id=&q=&offset=&limit=` | admin | `{items: [PaymentDTO + provider_tx_id, admin_id, hashar: {id, title, payment_status, deleted}, user: {id, name, phone}], total, summary: {paid_count, paid_amount}}`; `q` — hashar nomi, ism, telefon, tranzaksiya ID |
+| POST | `/api/admin/hashars/:id/mark-paid` | admin | `{note?, amount? (so'm; standart — joriy narx), waive?: true}` (tana ixtiyoriy) → `{ok, hashar (admin DTO), payment}`; qo'lda: `payments(provider='manual', state 1, admin_id)` + `paid` + egasiga `payment_confirmed`; `waive` (yoki summa 0 — 0 so'mlik to'lov yozilmaydi) — to'lovsiz `waived` + `published`, `payment: null`. To'lanmagan bo'lmasa 409 |
+| GET | `/api/admin/hashars?payment=unpaid\|paid\|waived` | admin | qo'shimcha filtr; admin DTO da doim `payment_status`. `overview` ga `unpaid, payments_paid, revenue` (so'm) |
+
+**Payme** (`worker/payme.js`): `Authorization: Basic base64("Paycom:" + KEY)` (KEY — `PAYME_KEY`; `PAYME_TEST_MODE=1` da
+`PAYME_TEST_KEY`, bo'lmasa `PAYME_KEY`), parol SHA-256 xeshlari doimiy vaqtda solishtiriladi; avval avtorizatsiya
+(kalitsiz so'rov faqat `-32504` oladi). Javob doim HTTP 200 `{jsonrpc: "2.0", id, result|error}`, xato
+`{code, message: {uz, ru, en}, data?}`. Hisob — `account.hashar_id`, summa tiyinda (= narx × 100).
+Holatlar: 1 yaratilgan, 2 bajarilgan, -1 bajarilmasdan bekor, -2 bajarilgandan keyin bekor. Timeout 12 soat
+(`create_time` dan): muddati o'tgan 1-holat `reason 4` bilan bekor qilinadi.
+- `CheckPerformTransaction {amount, account}` → `{allow: true}`; hashar yo'q / `hashar_id` noto'g'ri → -31050
+  (`data: "hashar_id"`), to'langan → -31051, boshqa kutilayotgan tranzaksiya → -31052, summa → -31001.
+- `CreateTransaction {id, time, amount, account}` → `{create_time, transaction, state: 1}`. Shu `id` qayta kelsa —
+  o'sha natija (idempotent); u 1-holatda bo'lmasa yoki muddati o'tgan bo'lsa → -31008. Yangisi: Check qoidalari,
+  bitta hasharga bitta kutilayotgan tranzaksiya (shartli INSERT; muddati o'tgani avtomatik bekor).
+- `PerformTransaction {id}` → `{transaction, perform_time, state: 2}`; takror — o'sha natija; bekor qilingan/
+  muddati o'tgan → -31008; hashar o'chirilgan yoki boshqa usulda to'langan → -31008 (holat o'zgarmaydi, pul yechilmaydi).
+  Bajarilganda bitta tranzaksiyada: `state 2`, `hashars.payment_status = 'paid'`, egasiga `payment_confirmed`.
+- `CancelTransaction {id, reason}` → `{transaction, cancel_time, state}`: 1 → -1; 2 → -2 (hashar PENDING bo'lsa yana
+  `unpaid`/yashirin + egasiga `payment_cancelled`; hashar COMPLETED → -31007); allaqachon bekor — o'sha natija.
+- `CheckTransaction {id}` → `{create_time, perform_time, cancel_time, transaction, state, reason}` (yo'q vaqt — 0, sabab — null).
+- `GetStatement {from, to}` → `{transactions: [{id, time, amount, account: {hashar_id}, create_time, perform_time,
+  cancel_time, transaction, state, reason}]}` — `time` (Payme `params.time`) oraliqda, o'sish tartibida.
+- Protokol: POST emas → -32300, JSON buzilgan → -32700, `method`/`params` yo'q yoki maydon turi noto'g'ri → -32600,
+  noma'lum metod → -32601, kutilmagan xato → -32400. Topilmagan tranzaksiya → -31003.
+Checkout havola: `https://checkout.paycom.uz/` (sinov rejimida `https://test.paycom.uz/`) + base64(`m=<PAYME_MERCHANT_ID>;
+ac.hashar_id=<id>;a=<tiyin>;c=<qaytish>`); qaytish = `<sayt>/#/hashar/<id>?tolov=1` (sayt — so'rov kelgan veb origin,
+APK'dan — `SITE_URL` env yoki API manzilining o'zi).
+
+**Click** (`worker/click.js`): `application/x-www-form-urlencoded` (JSON ham qabul qilinadi), javob doim HTTP 200
+`{click_trans_id, merchant_trans_id, merchant_prepare_id | merchant_confirm_id, error, error_note}`.
+`sign_string = md5(click_trans_id + service_id + CLICK_SECRET_KEY + merchant_trans_id [+ merchant_prepare_id] + amount +
+action + sign_time)` (doimiy vaqtda). `merchant_trans_id` = hashar ID, summa so'mda (`5000` / `5000.00`).
+Tekshiruv tartibi: maydon yo'q → -8, `action` mos emas → -3, imzo → -1, `service_id` boshqa → -8.
+- prepare (action 0): hashar yo'q → -5, to'langan → -4, summa → -2; `payments(provider='click', state 0)`,
+  `merchant_prepare_id` = payments.id; shu `click_trans_id` qayta kelsa — o'sha ID (bekor qilingan → -9, to'langan → -4).
+- complete (action 1): prepare topilmadi / `click_trans_id` yoki hashar mos emas → -6, allaqachon to'langan → -4,
+  bekor qilingan → -9, summa → -2; Click `error < 0` yuborsa → tranzaksiya bekor, -9; hashar o'chirilgan → -5,
+  boshqa usulda to'langan → -4 (ikkalasida ham tranzaksiya bekor); muvaffaqiyat → `state 1`, hashar `paid`,
+  egasiga bildirishnoma, `merchant_confirm_id` = payments.id. Kutilmagan xato → -7.
+Havola: `https://my.click.uz/services/pay?service_id=..&merchant_id=..&amount=<so'm>&transaction_param=<id>&return_url=..`.
+
+**Saqlanganlar, bildirishnomalar, QR davomat:**
+
+| Metod | Yo'l | Auth | Tavsif |
+|---|---|---|---|
+| POST / DELETE | `/api/hashars/:id/save` | ✓ | `{saved: true}` / `{saved: false}` (idempotent); ko'rinmaydigan hashar → 404; 120 / soat |
+| GET | `/api/me/saves?offset=&limit=` | ✓ | `HasharDTO[] + saved_at`, oxirgi saqlangani birinchi (limit ≤ 100, standart 50) |
+| GET | `/api/me/notifications?before=&limit=` | ✓ | `{items: [{id, type, text, hashar: {id, title, deleted} \| null, actor: {id, name, avatar_url} \| null, data, read, read_at, created_at}], unread_count, has_more, next_before}` — yangilari birinchi, `limit` ≤ 50 (standart 30), `before` — id kursor |
+| GET | `/api/me/notifications/unread-count` | ✓ | `{count}` |
+| POST | `/api/me/notifications/read` | ✓ | `{ids: [..]}` (1–100) yoki `{all: true}` → `{ok, updated, unread_count}`; faqat o'zinikilar; 300 / soat |
+| GET | `/api/hashars/:id/checkin-code` | ✓ egasi | `{hashar_id, code (6 raqam), expires_at, refresh_in, window_seconds: 600, url: "<sayt>/#/hashar/<id>?checkin=<code>", opens_at, closes_at}`; boshqa → 403; oynadan tashqari → 409 `checkin_closed`; to'lanmagan → 409 `payment_required` |
+| POST | `/api/hashars/:id/checkin` | ✓ (email) | `{code}` (6 raqam, bo'shliq/chiziqcha mumkin, yoki QR dagi havola) → `{checked_in: true, checked_in_at}`; allaqachon → o'sha vaqt + `already: true`; qo'shilmagan → 403 `not_joined`; tashkilotchi → 409; oynadan tashqari → 409 `checkin_closed`; noto'g'ri/eskirgan → 400 `checkin_invalid`; 20 urinish / soat |
+| GET | `/api/hashars/:id/checkins` | ✓ egasi/admin | `{total, checked_in, items: [{user: {id, name, avatar_url}, joined_at, checked_in_at}]}` — tashkilotchisiz, kelganlar birinchi |
+
+Bildirishnoma turlari: `join` (hasharingizga qo'shildi → egasiga; shu odamdan o'qilmagan `join` bo'lsa takrorlanmaydi),
+`comment` (egasi + qatnashuvchilarga, muallifdan boshqa; `data: {comment_id, excerpt}`), `completed` (qatnashuvchilarga),
+`payment_confirmed` (`data: {provider, amount}`), `payment_cancelled`, `published` (admin `waive`). Hech kimga o'z
+amali haqida, bloklanganlarga bildirishnoma yozilmaydi; `data.title` — sarlavha nusxasi; 180 kundan eskilari vaqti-vaqti
+bilan o'chiriladi. Davomat: oyna — hashar vaqtidan (Toshkent) 12 soat oldin — 12 soat keyin; kod =
+HMAC-SHA256(kalit, `checkin:<id>:<floor(ms/600000)>`) dan 6 raqam (RFC 4226 kesish), joriy va oldingi 10 daqiqalik
+oyna qabul qilinadi; kalit — Worker secret `CHECKIN_SECRET`, bo'lmasa bazada bir marta yaratiladigan tasodifiy
+`settings.checkin_secret`.
+
+Test uchun (faqat `EMAIL_MOCK=1`): `x-test-now: <unix ms>` sarlavhasi joriy vaqtni almashtiradi (Payme vaqtlari va
+timeout, Click vaqtlari, davomat oynasi/kodi). Production'da e'tiborsiz.
 
 ## 6. Web (React) — ekranlar va xatti-harakat
 
@@ -294,6 +399,61 @@ xatolar ichki tafsilotni oshkor qilmaydi (500 → "Server xatosi", log `console.
   tasdiqlangach amal o'zi davom etadi.
 - Profil → Sozlamalar → "Email" kartasi: email + "Tasdiqlangan" belgisi ("O'zgartirish") yoki "Tasdiqlanmagan" +
   "Email qo'shish" (o'sha kod komponenti). Admin foydalanuvchilar ro'yxatida email (✓ — tasdiqlangan).
+
+### 6.3. v4 frontend (`docs/V4_PLAN.md` 1, 3, 4-bo'limlar)
+
+- **Mavzular:** rejim `localStorage['hashar_theme']` (`light|dark`, yo'q — tizim) va aksent
+  `localStorage['hashar_accent']` (`zumrad` — standart, `okean`, `shafaq`, `binafsha`). `index.html` dagi skript ikkalasini
+  birinchi chizishdan oldin qo'llaydi (`<html class="dark" data-accent="…">`, `theme-color`). Ranglar `src/index.css` da:
+  `--a-50…950` (aksent shkalasi) → Tailwind `brand-50…950` (eski `emerald-*` ham aksentga ergashadi), neytrallar
+  (`--c-bg`, `--c-surface`…) aksent tusida; xarita pinlari/klasterlari, gradientlar, fokus halqasi ham aksentdan.
+  Kategoriya ranglari (tozalash — ko'k, ko'kalam — yashil…) aksentdan mustaqil. Status bar (APK) — sarlavha foni rangi.
+  Profil → Sozlamalar → "Ko'rinish": rejim, rangli doiralar, jonli mini oldindan ko'rish. Admin panel doim yorug'.
+- **Pastki tab bar:** suzuvchi shisha panel (`backdrop-filter: blur(20px) saturate(1.8)` + 74% fon, gradient va soya;
+  qo'llab-quvvatlanmasa yoki `prefers-reduced-transparency: reduce` — to'liq fon). `view-transition-name` panelning o'zida
+  turadi: ota elementda bo'lsa u "backdrop root" bo'lib, blur sahifani ko'rmay qolardi. Hashar sahifasidagi pastki
+  harakat paneli ＋ tugmasidan yuqorida, orasida sahifa matni ko'rinmasligi uchun parda bor. Aktiv tab ostida bahor bilan
+  siljiydigan "pill", aktiv ikonka to'ldiriladi,
+  bosilganda "sakraydi", markaziy ＋ — aksent gradient (bosilganda buriladi, puls halqasi), scroll pastga — yashirinadi,
+  tepaga — chiqadi (`html.tabbar-hidden`, pastki harakat paneli ham birga tushadi), haptika, Profil ustida o'qilmagan
+  bildirishnomalar soni. Desktop: aktiv bo'lim ostida siljiydigan chiziq, qo'ng'iroqcha + ochiladigan oyna.
+- **Animatsiyalar:** sahifa o'tishi — View Transitions API (`document.startViewTransition`, yo'nalishga qarab: oldinga /
+  orqaga / tablar orasida), bo'lmasa CSS `.page-enter`; ro'yxatlar `.stagger`, skelet "shimmer" (transform), modal/sheet
+  bahor animatsiyasi + yopilish animatsiyasi + pastga tortib yopish, tugma press-feedback. `prefers-reduced-motion` —
+  animatsiyalar va View Transitions o'chadi.
+- **Tezlik:** bosh sahifadan boshqa sahifalar lazy chunk (`src/lib/pages.js`); yuklangan sahifa komponenti barqaror
+  (qayta o'rnatilmaydi). `index.html` (Vite plagini `vite.config.js`) joriy marshrut chunk'ini `modulepreload` qiladi va
+  sahifa ma'lumotini (`/api/hashars`, `/api/hashars/:id`) kirish JS bilan parallel so'raydi — `api.js` uni bir marta
+  ishlatadi. Havola ustiga kelganda / bosila boshlaganda sahifa kodi + ma'lumoti oldindan, bo'sh vaqtda ehtimoliy
+  sahifalar kodi. `src/lib/store.js` — SWR kesh: xotira + `sessionStorage`, eskirgan ma'lumot darhol ko'rinib fonda
+  yangilanadi, parallel so'rovlar birlashtiriladi, `invalidate()` dan keyin boshlangan so'rov qayta ishlatiladi, oyna
+  qayta ko'ringanda 30 s dan eski kalitlar yangilanadi, `updateCached()` — optimistik o'zgarish. Rasmlar
+  `loading=lazy decoding=async` + o'lcham + yumshoq paydo bo'lish; mini xarita (MapLibre) faqat ekranga yaqinlashganda;
+  `/api/app`, reyting bloki, kirish oynasi kodi — kechiktirilgan.
+- **E'lon to'lovi (UI):** `GET /api/config` → `hashar_fee`, `payments`, `manual_payment_note` (localStorage'da).
+  Yaratish sahifasi narxni ko'rsatadi (sarlavha, tekshirish ro'yxati, "E'lon qilish · 5 000 so'm"); `payment_status:
+  'unpaid'` bo'lsa → `#/tolov/:id`: summa, Payme / Click (`openExternal` — APK'da Custom Tabs), qo'lda to'lov izohi
+  (karta raqamini nusxalash), holat ko'rinib turganda har 6 s da + ilova/oyna qaytganda tekshiriladi, to'langach
+  muvaffaqiyat animatsiyasi. `#/hashar/:id?tolov=1` (provayderdan qaytish) egasini shu sahifaga olib boradi. Egasining
+  kartalarida/profilida "To'lov kutilmoqda", hashar sahifasida to'lov holati va "To'lash". Admin: "To'lovlar"
+  (kutilayotgan hasharlar — "To'landi" (izoh bilan) / "Bepul"; tarix — provayder/holat filtri, qidiruv, jami tushum),
+  "Sozlamalar" (`hashar_fee`, `manual_payment_note`, provayderlar holati); "Hasharlar" da "To'lanmagan" filtri.
+- **Saqlanganlar:** kartalarda va hashar sahifasida xatcho'p (optimistik, barcha keshlarda bir zumda), Profil →
+  "Saqlanganlar" (`GET /api/me/saves`).
+- **Bildirishnomalar:** header qo'ng'iroqchasi (badge, desktopda oxirgi 7 tasi bilan oyna), `#/bildirishnomalar`
+  (kunlar bo'yicha: Bugun / Kecha / sana, "hammasini o'qish", bosilsa o'qildi + hashar sahifasi, "Yana yuklash"
+  `before=`). O'qilmaganlar soni ko'rinib turganda 60 s da va qaytganda yangilanadi.
+- **QR davomat:** egasi — "Davomat QR" (`GET /api/hashars/:id/checkin-code`, `qrcode` kutubxonasi, kod muddati tugashi
+  bilan avtomatik yangilanadi, teskari sanoq, kelganlar — `GET /api/hashars/:id/checkins`, 15 s); ko'ngilli —
+  "Davomatni tasdiqlash" (APK — `scanQr()`, saytda — 6 xonali kod), QR havolasi `#/hashar/:id?checkin=<kod>` o'zi
+  tasdiqlaydi. Tugma davomat oynasida (boshlanishdan 12 soat oldin — 12 soat keyin) ko'rinadi.
+- **Ulashish kartasi / sertifikat:** yakunlangan hashar (qatnashgan yoki tashkilotchi) — canvas 1080×1350 (Oldin/Keyin,
+  nom, sana, manzil, ism), "Yuklab olish" / "Ulashish" (Web Share files, bo'lmasa havola). Rasm boshqa domendan
+  yuklanmasa (CORS) — rasmsiz variant.
+- **Onboarding:** APK birinchi ochilganda 3 slayd (`localStorage['hashar_onboarded']`); saytda faqat `?onboarding=1`.
+- **Ilova qulfi va eslatmalar:** `<AppLock>` butun ilovani o'raydi, `<LockSettings/>` Sozlamalarda (`src/lock/`);
+  `syncReminders` qo'shilgan hasharlar ro'yxati yuklanganda/o'zgarganda (faqat APK'da, `src/lib/reminders.js`),
+  chiqishda `cancelReminders`; Sozlamalar → "Hashar eslatmalari" kaliti (APK).
 
 ## 7. Android APK (Capacitor 8)
 

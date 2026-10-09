@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Ilova faqat HTTPS API bilan ishlaydi (usesCleartextTraffic=false). -->
     <!-- Zaxira o'chiq: sessiya tokeni (WebView localStorage) Google zaxirasi / adb backup /
@@ -38,6 +39,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
         </provider>
+
+        <!-- @capacitor-mlkit/barcode-scanning (QR davomat): Google kod skaneri moduli (barcode_ui) va shtrix-kod
+             modeli (barcode, unbundled — app/build.gradle) Play xizmatlari orqali oldindan yuklansin;
+             bo'lmasa ilova birinchi skanerlashda o'zi o'rnatadi -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode,barcode_ui" />
     </application>
 
     <!-- Ruxsatlar (SPEC 7, v3 plaginlari bilan mos) -->
@@ -53,6 +61,15 @@
     <!-- @capacitor/haptics: muhim amallarda yengil tebranish -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Galereya: tizim fayl tanlagichi ishlatiladi — saqlash ruxsati kerak emas -->
+    <!-- v4: ilova qulfi — barmoq izi / yuz (@capgo/capacitor-native-biometric) -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <!-- v4: hashar eslatmalari (@capacitor/local-notifications; Android 13+ da ish vaqtida so'raladi).
+         Qayta yuklangandan keyin eslatmalarni tiklash uchun RECEIVE_BOOT_COMPLETED / WAKE_LOCK plagindan keladi. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Aniq budilnik kerak emas (eslatmalar isExactNotification:false — tizim bir necha daqiqa surishi mumkin):
+         plagin qo'shadigan SCHEDULE_EXACT_ALARM olib tashlanadi (Play siyosati, ortiqcha ruxsat so'rovi yo'q) -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" tools:node="remove" />
+    <!-- QR davomat: kamera (yuqoridagi CAMERA) — zaxira skaner uchun; Google kod skaneri ruxsatsiz ishlaydi -->
 
     <!-- Kamera/GPS bo'lmagan qurilmalarga ham o'rnatilsin -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />

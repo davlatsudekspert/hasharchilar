@@ -10,7 +10,11 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomEmail, randomIp, randomPhone, register, rnd, tashkentDate } from './helpers.mjs';
+import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomEmail, randomIp, randomPhone, register, rnd, setFee, tashkentDate } from './helpers.mjs';
+
+// v4: hashar e'lon qilish narxi standart 5000 so'm (to'lanmagan hashar ommaga ko'rinmaydi). Bu fayldagi v1–v3
+// testlari hashar darhol e'lon qilinishini kutadi — narx 0 (bepul). To'lov testlari: tests/payments.suite.mjs.
+await setFee(0);
 
 const IS_LOCAL_SERVER = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE);
 const STORAGE = process.env.STORAGE === 'do' ? 'do' : 'd1'; // serverdagi baza turi
@@ -1102,9 +1106,10 @@ describe('v3: reyting (GET /api/leaderboard)', () => {
   const check = (arr) => {
     assert.ok(Array.isArray(arr) && arr.length <= 50);
     for (const [i, e] of arr.entries()) {
-      assert.deepEqual(Object.keys(e).sort(), ['completed', 'created', 'joined', 'score', 'user']);
+      assert.deepEqual(Object.keys(e).sort(), ['checkins', 'completed', 'created', 'joined', 'score', 'user']);
       assert.deepEqual(Object.keys(e.user).sort(), ['avatar_url', 'district', 'id', 'name']);
-      assert.equal(e.score, e.completed * 10 + e.joined * 3 + e.created * 5);
+      // v4: QR davomat bonusi — har bir davomat +5
+      assert.equal(e.score, e.completed * 10 + e.joined * 3 + e.created * 5 + e.checkins * 5);
       assert.ok(e.score > 0);
       if (i) assert.ok(arr[i - 1].score >= e.score, 'score kamayish tartibida');
     }
@@ -1262,3 +1267,9 @@ describe('v3: geo proksi', () => {
     assert.equal(again.headers.get('x-geo-cache'), 'miss');
   });
 });
+
+// ---------- v4 (docs/V4_PLAN.md 3–4-bo'limlar) ----------
+// `npm run test:api` fayllar ro'yxati package.json da — v4 testlari shu faylning oxirida (v3 testlaridan keyin)
+// ulanadi: to'lov (narx, ko'rinish, Payme, Click, qo'lda) va saqlanganlar / bildirishnomalar / QR davomat.
+await import('./payments.suite.mjs');
+await import('./v4.suite.mjs');

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { ArrowRightIcon, CameraIcon, ChevronDownIcon, GlobeIcon, HandIcon, HeartIcon, LeafIcon, MapIcon, ShieldIcon, TrophyIcon, UsersIcon } from '../components/icons.jsx';
 import { btn, Link, SectionHeader } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
 import { cx } from '../lib/utils.js';
 
@@ -37,7 +37,7 @@ function FaqItem({ q, a }) {
 }
 
 export default function AboutPage() {
-  const stats = useApi('stats', api.stats);
+  const stats = useApi(...Q.stats);
   const s = stats.data || {};
   return (
     <div>
@@ -50,7 +50,7 @@ export default function AboutPage() {
           <h1 className="mt-5 text-4xl font-extrabold sm:text-5xl">
             Hashar — <span className="text-gradient">bizning an'anamiz</span>
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-emerald-50/85">
+          <p className="mx-auto mt-4 max-w-2xl text-lg leading-relaxed text-brand-50/85">
             hasharchilar.uz — mahalla hasharlarini zamonaviy usulda tashkil qilish platformasi. Biz qo'shnilarni birlashtiramiz, natijani esa hamma ko'radi.
           </p>
           <div className="mx-auto mt-8 grid max-w-2xl grid-cols-3 gap-3">
@@ -61,7 +61,7 @@ export default function AboutPage() {
             ].map(([v, l]) => (
               <div key={l} className="rounded-3xl bg-white/[0.08] p-4 ring-1 ring-white/15">
                 <p className="font-display text-3xl font-extrabold tabular">{v ?? '—'}</p>
-                <p className="text-sm text-emerald-100/80">{l}</p>
+                <p className="text-sm text-brand-100/80">{l}</p>
               </div>
             ))}
           </div>

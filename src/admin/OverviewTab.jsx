@@ -12,7 +12,7 @@ import { UserBadges } from './UsersTab.jsx';
 
 function StatCard({ icon: Icon, label, value, hint, tone = 'emerald' }) {
   const tones = {
-    emerald: 'bg-emerald-50 text-emerald-700',
+    emerald: 'bg-brand-50 text-brand-700',
     amber: 'bg-amber-50 text-amber-600',
     sky: 'bg-sky-50 text-sky-700',
     red: 'bg-red-50 text-red-600',
@@ -28,7 +28,7 @@ function StatCard({ icon: Icon, label, value, hint, tone = 'emerald' }) {
           <Icon className="h-[18px] w-[18px]" />
         </span>
       </div>
-      {hint && <p className="mt-0.5 text-xs font-semibold text-emerald-700">{hint}</p>}
+      {hint && <p className="mt-0.5 text-xs font-semibold text-brand-700">{hint}</p>}
     </div>
   );
 }
@@ -80,7 +80,7 @@ export default function OverviewTab({ meId, onShowUser, onShowAll }) {
 
   const week = (n) => (n ? `+${n} so'nggi 7 kunda` : "7 kunda yangi yo'q");
   const link = (label, onClick) => (
-    <button type="button" onClick={onClick} className="text-sm font-bold text-emerald-700 hover:underline">
+    <button type="button" onClick={onClick} className="text-sm font-bold text-brand-700 hover:underline">
       {label}
     </button>
   );

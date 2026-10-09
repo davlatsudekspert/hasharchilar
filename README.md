@@ -78,33 +78,40 @@ hasharchilar/
 ├── package.json             # web + worker + capacitor (bitta paket)
 ├── wrangler.jsonc           # Worker hasharchilar-api: assets ./dist (ASSETS), D1 (DB), DO (HASHAR_DB), R2 (PHOTOS)
 ├── capacitor.config.json    # uz.hasharchilar.app, webDir dist
-├── migrations/              # 0001_init, 0002_admin, 0003_v3, 0004_email (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
+├── migrations/              # 0001_init, 0002_admin, 0003_v3, 0004_email, 0005_v4 (D1: wrangler d1 migrations apply; DO: o'zi qo'llaydi)
 ├── schema.sql               # migratsiyalar birlashtirilgani (qulaylik uchun)
 ├── seed.sql                 # FAQAT lokal namuna ma'lumot (parol: demo1234)
 ├── worker/                  # Hono backend (+ admin.js, social.js — izoh/profil/reyting, geo.js — Nominatim proksi,
 │                            #   email.js — Resend + xat shabloni, otp.js — email kodlari,
-│                            #   do-db.js, d1-adapter.js, migrations.js, sql-split.js)
+│                            #   v4: payments.js (+ payme.js, click.js, payledger.js, payconfig.js) — e'lon to'lovi,
+│                            #   settings.js — narx/izoh, saves.js, notify.js — bildirishnomalar, checkin.js — QR davomat,
+│                            #   clock.js, do-db.js, d1-adapter.js, migrations.js, sql-split.js)
 ├── scripts/wrangler-config.mjs # wrangler.jsonc → wrangler.deploy.json (--storage d1|do)
 ├── scripts/site-url.sh      # CI: https://<worker>.<subdomen>.workers.dev manzili
-├── tests/api.test.mjs       # API testi (node:test, wrangler dev ga qarshi; D1 va DO rejimida)
+├── tests/api.test.mjs       # API testi (node:test, wrangler dev ga qarshi; D1 va DO rejimida); oxirida v4:
+│                            #   payments.suite.mjs (narx, ko'rinish, Payme, Click, qo'lda), v4.suite.mjs (saqlash, bildirishnoma, davomat)
 ├── tests/admin.test.mjs     # admin panel API testi (server ADMIN_PHONES bilan); tests/helpers.mjs — umumiy
 ├── tests/email.test.mjs     # email ro'yxat / kirish / tiklash / tasdiqlash, "email majburiy" (server EMAIL_MOCK bilan)
-├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config (fixtures/: seed-v2/v3.sql)
+├── tests/storage.test.mjs   # baza qatlami: DO adapteri = D1, migratsiyalar, wrangler-config (fixtures/: seed-v2/v3/v4.sql)
 ├── src/                     # React (sayt va APK uchun bir xil)
-│   ├── lib/                 #   router (hash), store (kesh), theme, actions, api, auth, native, map, meta, utils
-│   ├── pages/               #   Home, Map, List, Hashar, Create, Results, Leaderboard, Profile, User, About,
-│   │                        #   Login, NotFound — har biri alohida sahifa (#/...)
-│   ├── components/          #   Header, TabBar, Footer, HasharCard, Comments, PhotoInput, ProfileParts, ui, icons,
-│   │                        #   AuthForm, EmailOtp (6 katakli kod), EmailVerifyScreen ("Emailni tasdiqlang" + banner)
+│   ├── lib/                 #   router (hash), pages (lazy chunk'lar, prefetch, View Transitions), store (SWR kesh),
+│   │                        #   queries, theme (rejim + aksent), actions, api, auth, native, notifications, saves,
+│   │                        #   payments, reminders, onboarding, map, meta, utils
+│   ├── pages/               #   Home, Map, List, Hashar, Create, Payment (#/tolov/:id), Notifications, Results,
+│   │                        #   Leaderboard, Profile, User, About, Login, NotFound — har biri alohida sahifa (#/...)
+│   ├── components/          #   Header (+ BellPanel), TabBar, Footer, HasharCard, SaveButton, Checkin (QR), ShareCard,
+│   │                        #   Onboarding, NotificationItem, SuccessBurst, AppearancePicker, Comments, PhotoInput,
+│   │                        #   ProfileParts, ui, icons, AuthForm, EmailOtp, EmailVerifyScreen, EmailBanner
 │   │   └── map/             #   HasharMap (klaster), MiniMap, LocationPicker — lazy (MapLibre faqat kerak bo'lganda)
-│   └── admin/               #   admin panel (#admin / #/admin, alohida lazy bundle)
+│   ├── lock/, native/       #   ilova qulfi (PIN / barmoq izi), eslatmalar, QR skaner, tashqi brauzer (APK)
+│   └── admin/               #   admin panel (#admin / #/admin, alohida lazy bundle; v4: To'lovlar, Sozlamalar)
 ├── public/                  # favicon, ikonlar, og-image, demo/ (seed rasmlari)
 ├── android/                 # Capacitor Android loyihasi (commit qilinadi)
 ├── resources/, scripts/     # ikonka/splash manbalari va generatori
-└── docs/screenshots/        # ekran rasmlari: v3-*.png (mobil 390px, desktop 1366px, yorug' va tungi)
+└── docs/screenshots/        # ekran rasmlari: v3-*.jpg, v4-*.jpg (mobil 390px, desktop 1366px, yorug' va tungi)
 ```
 
-## Frontend (v3): sahifalar va dizayn
+## Frontend (v4): sahifalar, dizayn va tezlik
 
 Hash router (`src/lib/router.js`) — sayt va APK da bir xil, "orqaga" tugmasi brauzer tarixi bilan ishlaydi:
 
@@ -113,31 +120,59 @@ Hash router (`src/lib/router.js`) — sayt va APK da bir xil, "orqaga" tugmasi b
 | `#/` | Bosh sahifa: hero + jonli statistika, kategoriyalar, yaqinlashayotgan hasharlar karuseli, "Qanday ishlaydi", Oldin/Keyin vitrina, top ko'ngillilar, APK bloki |
 | `#/xarita` | To'liq ekran MapLibre xarita: klasterlar, holat va kategoriya filtrlari, "Mening joyim", mobilda pastki panel (karusel ↔ ro'yxat), desktopda chap ro'yxat |
 | `#/hasharlar` | Ro'yxat: qidiruv, holat, kategoriya, sana oralig'i, masofa (mendan N km), saralash, setka/ro'yxat ko'rinishi, tortib yangilash |
-| `#/hashar/:id` | Hashar sahifasi: rasm yoki Oldin/Keyin slayder, mini xarita, progress (`max_volunteers`), ko'ngillilar, izohlar, ulashish, kalendar (.ics / Google Calendar), Google/Yandex yo'l ko'rsatish, egasi uchun yakunlash/o'chirish |
-| `#/yaratish` | 4 qadamli e'lon: kategoriya kartalari → xaritada pin + manzil qidiruvi + avtomatik manzil (reverse geocode) → sana/vaqt, ko'ngillilar soni, narsalar → "Oldin" rasmi (kamera/galereya) va tekshirish; qoralama saqlanadi |
+| `#/hashar/:id` | Hashar sahifasi: rasm yoki Oldin/Keyin slayder, mini xarita, progress, ko'ngillilar, izohlar, ulashish, saqlash, kalendar, yo'l ko'rsatish; egasi — yakunlash/o'chirish, **to'lov holati**, **Davomat QR**; ko'ngilli — **Davomatni tasdiqlash**; yakunlangach — **sertifikat** |
+| `#/yaratish` | 4 qadamli e'lon (kategoriya → xaritada joy → sana/tafsilotlar → "Oldin" rasmi); **e'lon narxi** sarlavhada, tekshirish ro'yxatida va tugmada ko'rinadi |
+| `#/tolov/:id` | **To'lov** (egasi): summa, Payme / Click, qo'lda to'lov izohi, holat avtomatik tekshiriladi, to'langach animatsiya |
+| `#/bildirishnomalar` | **Bildirishnomalar**: kunlar bo'yicha, "hammasini o'qish", chuqur havolalar, 60 s da yangilanadi |
 | `#/natijalar` | Oldin/Keyin galereya |
 | `#/reyting` | Reyting: shu oy / umumiy, podium (top-3) |
-| `#/profil` | Profilim: avatar, bio, tuman, statistika, daraja, nishonlar, mening hasharlarim, sozlamalar (email — qo'shish/tasdiqlash/o'zgartirish, mavzu, parolni o'zgartirish, admin, chiqish) |
+| `#/profil` | Profilim: statistika, daraja, tablar — Hasharlarim · **Saqlanganlar** · Nishonlar · Sozlamalar (email, **ko'rinish: rejim + rang aksenti**, **ilova qulfi**, **eslatmalar**, parol, admin, chiqish); to'lov kutayotgan hasharlar eslatmasi |
 | `#/u/:id` | Ommaviy profil (telefon ko'rsatilmaydi) |
 | `#/haqida` | Loyiha haqida + FAQ |
-| `#/kirish` | Kirish (telefon yoki email) / ro'yxatdan o'tish (email kodi bilan) / parolni tiklash (amallar uchun modal ham bor) |
-| `#admin`, `#/admin` | Admin panel |
+| `#/kirish` | Kirish / ro'yxat (email kodi) / parolni tiklash |
+| `#admin`, `#/admin` | Admin panel: Umumiy · Foydalanuvchilar · Hasharlar (+ "To'lanmagan" filtri) · **To'lovlar** · **Sozlamalar** |
 
-- **Dizayn:** emerald asosiy rang, amber faqat asosiy CTA va "kutilmoqda" pinlari uchun; semantik rang tokenlari
-  (`src/index.css`, `--c-*` → Tailwind `bg-surface`, `text-ink` ...). **Tungi rejim**: tizimga ergashadi yoki
-  qo'lda (`localStorage['hashar_theme']`), birinchi chizishdan oldin qo'llanadi; xarita ham `liberty` ↔ `dark`
-  uslubiga o'tadi. Sahifa o'tish animatsiyalari, skeletlar, `prefers-reduced-motion` hurmat qilinadi.
-- **Navigatsiya:** desktopda yuqori menyu, mobil va APK da pastki tab bar (Bosh · Xarita · ＋ · Natijalar · Profil),
-  safe-area hisobga olinadi.
-- **Xarita:** MapLibre GL + OpenFreeMap (`https://tiles.openfreemap.org/styles/liberty`, tungi — `/styles/dark`),
-  atributsiya doim ko'rinadi ("© OpenFreeMap © OpenMapTiles © OpenStreetMap"). MapLibre (~1 MB) alohida lazy
-  chunk — bosh sahifa tez ochiladi. Manzil qidiruvi va reverse geocode faqat worker proksi orqali
-  (`/api/geo/search`, `/api/geo/reverse`); xizmat ishlamasa manzil qo'lda kiritiladi.
-- **Kesh:** `src/lib/store.js` — sahifalar orasida ma'lumot darhol ko'rinadi, orqa fonda yangilanadi; amallardan
-  keyin tegishli kalitlar (`hashars`, `hashar:<id>`, `stats`, `leaderboard`...) qayta yuklanadi.
-- **Ulashish havolasi:** `<sayt>/#/hashar/<id>` (APK da sayt domeni bilan).
+- **Mavzular (v4):** rejim — Yorug' / Tungi / Tizim, rang aksenti — **Zumrad** (standart), **Okean**, **Shafaq**,
+  **Binafsha**. Hammasi CSS o'zgaruvchilari (`src/index.css`: `--a-50…950` aksent shkalasi → Tailwind `brand-*`,
+  neytrallar aksent tusida); tanlov `localStorage['hashar_theme']` / `['hashar_accent']`, `index.html` dagi skript
+  birinchi chizishdan oldin qo'llaydi. Xarita pinlari va klasterlari, gradientlar, fokus halqasi, status bar (APK) ham
+  aksentga ergashadi. Tanlagich: Profil → Sozlamalar → "Ko'rinish" (rangli doiralar + jonli mini oldindan ko'rish).
+- **Navigatsiya:** mobil/APK — suzuvchi shisha pastki tab bar (`backdrop-filter` blur; qo'llab-quvvatlanmasa yoki
+  "shaffoflikni kamaytirish" yoqilgan bo'lsa — to'liq fon): siljiydigan "pill" (bahor), to'ldiriladigan ikonkalar,
+  bosilganda sakrash, markaziy ＋ (aksent gradient, burilish, puls), scroll pastga — yashirinadi / tepaga — chiqadi,
+  haptika, o'qilmagan bildirishnomalar belgisi. Desktop — yuqori menyu (aktiv bo'lim chizig'i siljiydi), qo'ng'iroqcha
+  va ochiladigan bildirishnomalar oynasi.
+- **Animatsiyalar:** View Transitions API bilan sahifa o'tishi (oldinga/orqaga/tablar), bo'lmasa CSS; ro'yxatlar
+  ketma-ket paydo bo'ladi, skelet "shimmer", modal/sheet bahor animatsiyasi (pastga tortib yopish), press-feedback,
+  muvaffaqiyat animatsiyasi (to'lov, davomat). `prefers-reduced-motion` hurmat qilinadi.
+- **Tezlik:** sahifalar lazy chunk; `index.html` joriy sahifa chunk'ini `modulepreload` qiladi va uning ma'lumotini
+  kirish JS bilan parallel so'raydi; havola ustiga kelganda / bosila boshlaganda oldindan yuklash, bo'sh vaqtda
+  keyingi sahifalar kodi; SWR kesh (xotira + `sessionStorage`, fonda yangilash, takroriy so'rovlar birlashadi,
+  amallardan keyin `invalidate`); rasmlar `loading=lazy decoding=async` + o'lcham; MapLibre (~280 KB gzip) faqat
+  xarita ko'rinadigan bo'lganda; kirish/email oynalari, admin, onboarding, sertifikat — alohida chunk.
+  O'lchov (Playwright, 390×844, 1.6 Mbit/s + 150 ms, CPU ×4, bir xil baza, 5 marta mediana; "kontent" — kartalar /
+  sarlavha DOM'ga tushgan lahza; v3 build → v4 build): kirish JS 381.8 → 278.8 KB (gzip 113.6 → 90.0 KB); kontentgacha
+  yuklangan JS: bosh sahifa 111 → 88 KB, hashar sahifasi 393 → 112 KB jami (MapLibre kechiktirildi); kontent: bosh
+  sahifa 1720 → 1492 ms (kontentgacha API so'rovlari 5 → 3), ro'yxat 1577 → 1365 ms, natijalar kartalari
+  1529 → 1338 ms, hashar sahifasi 1407 → 1402 ms. Teskari tomoni: chuqur havola bilan ochilgan sahifaning statik
+  sarlavhasi endi sahifa chunk'ini kutadi (natijalar `h1`: 1099 → 1313 ms, hashar FCP 1192 → 1308 ms).
+- **Xarita:** MapLibre GL + OpenFreeMap (`liberty`, tungi — `dark`), atributsiya doim ko'rinadi; manzil qidiruvi va
+  reverse geocode faqat worker proksi orqali (`/api/geo/*`).
+- **To'lov, saqlash, bildirishnoma, QR, sertifikat, onboarding, ilova qulfi** — batafsil: [`SPEC.md`](./SPEC.md) 6.3.
+- **Ulashish havolasi:** `<sayt>/#/hashar/<id>` (APK da sayt domeni bilan); QR davomat havolasi —
+  `<sayt>/#/hashar/<id>?checkin=<kod>`, to'lovdan qaytish — `<sayt>/#/hashar/<id>?tolov=1`.
 
-Ekran rasmlari (`docs/screenshots/`, lokal `wrangler dev` + Playwright E2E dan):
+v4 ekran rasmlari (`docs/screenshots/v4-*.jpg`, toza lokal baza + Playwright, haqiqiy oqim: ro'yxat → yaratish →
+to'lov → admin "To'landi" → e'lon → bildirishnoma → QR davomat → sertifikat):
+
+| Mobil (390px) | | | Desktop (1366px) |
+|---|---|---|---|
+| ![Bosh sahifa](docs/screenshots/v4-mobile-home.jpg) | ![Tungi, Binafsha](docs/screenshots/v4-mobile-home-dark-binafsha.jpg) | ![Xarita, Okean](docs/screenshots/v4-mobile-map-okean.jpg) | ![Bosh sahifa, Shafaq](docs/screenshots/v4-desktop-home-shafaq.jpg) |
+| ![Narx](docs/screenshots/v4-mobile-create-fee.jpg) | ![To'lov](docs/screenshots/v4-mobile-payment.jpg) | ![To'landi](docs/screenshots/v4-mobile-payment-success.jpg) | ![Admin: to'lovlar](docs/screenshots/v4-desktop-admin-payments.jpg) |
+| ![Bildirishnomalar](docs/screenshots/v4-mobile-notifications.jpg) | ![Davomat QR](docs/screenshots/v4-mobile-qr.jpg) | ![Sertifikat](docs/screenshots/v4-mobile-share-card-dark.jpg) | ![Admin: sozlamalar](docs/screenshots/v4-desktop-admin-settings.jpg) |
+| ![Saqlanganlar](docs/screenshots/v4-mobile-saved-dark.jpg) | ![Mavzu tanlagich](docs/screenshots/v4-mobile-theme-dark-okean.jpg) | ![Onboarding](docs/screenshots/v4-mobile-onboarding.jpg) | ![Bildirishnomalar oynasi](docs/screenshots/v4-desktop-bell-dark.jpg) |
+
+v3 ekran rasmlari (`docs/screenshots/`, lokal `wrangler dev` + Playwright E2E dan):
 
 | Mobil (390px) | | Desktop (1366px) |
 |---|---|---|
@@ -183,6 +218,21 @@ npm run build && npx wrangler dev --port 8787   # http://localhost:8787
 
 Lokal bazani nolga qaytarish: `rm -rf .wrangler/state && npm run db:local`.
 
+**Hashar narxi (v4).** Standart narx 5000 so'm: yangi hashar to'languncha faqat egasiga ko'rinadi (`seed.sql` dagi
+5-hashar — shunday namuna, egasi `jasur@example.com`). Lokal sinash uchun narxni admin panelda yoki
+`POST /api/admin/settings {"hashar_fee": 0}` bilan 0 qiling. Payme/Click havolalari va callback'larini lokal sinash uchun
+`.dev.vars` (`.gitignore` da) ga SOXTA kalitlar yozing — testlardagi bilan bir xil:
+
+```bash
+PAYME_MERCHANT_ID=hc-test-merchant-0001
+PAYME_KEY=hc-test-payme-key
+CLICK_SERVICE_ID=10001
+CLICK_MERCHANT_ID=20002
+CLICK_SECRET_KEY=hc-test-click-secret
+```
+
+Kalitsiz faqat "qo'lda" to'lov ishlaydi (admin tasdiqlaydi). Haqiqiy kalitlar faqat GitHub secret'larida ([To'lovlar](#tolovlar-payme--click--qolda)).
+
 Lokal dev standart holatda **D1 rejimida** ishlaydi (`wrangler.jsonc` dagi D1 binding). Production'dagi
 **Durable Object rejimi**ni sinash:
 
@@ -197,13 +247,15 @@ boshlanadi, migratsiyalar birinchi so'rovda avtomatik qo'llanadi.
 
 ```bash
 npm run build && npm run db:local  # dist/ (assets) va lokal D1
-npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 &   # boshqa terminalda
-npm run test:api                   # tests/api.test.mjs + admin.test.mjs + email.test.mjs (BASE_URL bilan boshqa manzil)
+# SOXTA to'lov kalitlari (haqiqiy emas; tests/helpers.mjs → PAY_TEST bilan bir xil)
+PAY="--var PAYME_MERCHANT_ID:hc-test-merchant-0001 --var PAYME_KEY:hc-test-payme-key --var CLICK_SERVICE_ID:10001 --var CLICK_MERCHANT_ID:20002 --var CLICK_SECRET_KEY:hc-test-click-secret"
+npx wrangler dev --port 8787 --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 $PAY &   # boshqa terminalda
+npm run test:api                   # tests/api.test.mjs (+ payments.suite.mjs, v4.suite.mjs) + admin.test.mjs + email.test.mjs
 
 # Durable Object rejimi (alohida port va saqlash papkasi):
 node scripts/wrangler-config.mjs --storage do
 npx wrangler dev --config wrangler.deploy.json --port 8788 --persist-to .wrangler/state-do-test \
-  --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 &
+  --var ADMIN_PHONES:+998900000099 --var GEO_MOCK:1 --var EMAIL_MOCK:1 $PAY &
 STORAGE=do BASE_URL=http://localhost:8788 npm run test:api
 
 npm run test:storage               # server kerak emas: DO adapteri = D1, migratsiyalar, wrangler-config
@@ -218,6 +270,17 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
 - `tests/email.test.mjs` oxirida email xizmati **o'chiq** holatni (`EMAIL_MOCK` ham, `RESEND_API_KEY` ham yo'q)
   sinash uchun o'zi vaqtinchalik papkada uchinchi `wrangler dev` (DO rejimi) ochadi — eski ro'yxat ishlaydi,
   email marshrutlari 503, yozuvchi amallar cheklanmaydi. Tayyor serverni berish: `NOEMAIL_URL=http://...`.
+- **v4 testlari** `tests/api.test.mjs` oxirida ulanadi (`package.json` dagi ro'yxat o'zgarmaydi):
+  `tests/payments.suite.mjs` — narx/sozlamalar, to'lanmagan hasharning ko'rinishi (ro'yxat, xarita, qidiruv, profil,
+  statistika, reyting), Payme to'liq ketma-ketligi (Check → Create → Perform, bajarilishdan oldin/keyin bekor qilish,
+  12 soatlik timeout, noto'g'ri summa/hisob, avtorizatsiya xatolari, idempotent takrorlar, GetStatement), Click
+  (prepare → complete, imzo, summa, takror, bekor), qo'lda tasdiqlash va narx 0; `tests/v4.suite.mjs` — saqlanganlar,
+  bildirishnomalar, QR davomat (oynalar, kod almashishi) va reyting bonusi. v1–v3 test fayllari boshida narx 0 ga
+  qo'yiladi (`setFee(0)` — hasharlar darhol e'lon qilinadi). Server soxta to'lov kalitlarisiz ishga tushgan bo'lsa
+  Payme/Click bo'limlari o'tkaziladi; `REQUIRE_PAYMENTS=1` (CI) bo'lsa — xato. Boshqa soxta qiymatlar bilan:
+  `TEST_PAYME_MERCHANT_ID`, `TEST_PAYME_KEY`, `TEST_CLICK_SERVICE_ID`, `TEST_CLICK_MERCHANT_ID`, `TEST_CLICK_SECRET_KEY`.
+  Vaqtga bog'liq holatlar (Payme timeout, davomat oynasi va 10 daqiqalik kod) `x-test-now: <unix ms>` sarlavhasi bilan
+  sinaladi — server uni faqat `EMAIL_MOCK=1` da qabul qiladi.
 - Admin testlari (`tests/admin.test.mjs`) server **`ADMIN_PHONES`** bilan ishga tushgan bo'lishini talab qiladi:
   `+998900000099` — soxta test raqami (boshqasi uchun `ADMIN_PHONE=+998... npm run test:api`). Bu raqam bilan
   hisob bo'lmasa ro'yxatdan o'tiladi, bo'lsa kiriladi (parol `admin-test-123`). `npm run dev:api` ham shu raqamni beradi.
@@ -236,9 +299,10 @@ npm run test:storage               # server kerak emas: DO adapteri = D1, migrat
   tashqi kalit / `ON DELETE CASCADE` ni va qayta ishga tushganda migratsiyalar takrorlanmasligini tekshiradi.
   Yangilanish testi: `0001` dan keyin `seed.sql` (+ sessiya va limit qatorlari) yoziladi, so'ng qolgan
   migratsiyalar birma-bir qo'llanadi — har biri ma'lumotli bazada o'tishi shart. `seed.sql` eng yangi sxemaga
-  yozilgani uchun `tests/fixtures/seed-v2.sql` (0003 dan oldingi) va `seed-v3.sql` (0004 dan oldingi namuna)
-  ham ishlatiladi: `0002`, `0003_v3` va `0004_email` albatta to'la jadvallarda sinaladi (yangi ustunlarning
-  DEFAULT qiymatlari, emaillarni normallashtirish/takrorlarni tozalash va UNIQUE indeks ham tekshiriladi).
+  yozilgani uchun `tests/fixtures/seed-v2.sql` (0003 dan oldingi), `seed-v3.sql` (0004 dan oldingi) va `seed-v4.sql`
+  (0005 dan oldingi namuna) ham ishlatiladi: `0002`, `0003_v3`, `0004_email` va `0005_v4` albatta to'la jadvallarda
+  sinaladi (yangi ustunlarning DEFAULT qiymatlari — mavjud hasharlar `paid`, emaillarni normallashtirish/takrorlarni
+  tozalash, UNIQUE/CHECK/FOREIGN KEY va indekslar ham tekshiriladi).
 
 ## Android ilova (APK) ni lokal qurish
 
@@ -285,6 +349,22 @@ cd android && ./gradlew assembleRelease -PversionCode=3 -PversionName=1.0.3
   - ikonka: adaptive (gradient fon + oq barg) va Android 13+ monoxrom; generator — `scripts/gen-android-assets.mjs`;
   - ilova ma'lumotlari (sessiya tokeni) Android zaxirasiga va qurilma ko'chirishga tushmaydi
     (`allowBackup="false"` + `data_extraction_rules.xml`).
+- v4 native imkoniyatlari (`src/lock/`, `src/native/`; saytda yuklanmaydi):
+  - **ilova qulfi** — 4 xonali PIN (PBKDF2 + tasodifiy salt, `@capacitor/preferences` da; ochiq matn saqlanmaydi) va
+    barmoq izi / yuz (`@capgo/capacitor-native-biometric`, qurilma qo'llasa; PIN — zaxira). Ilova ochilganda va fondan
+    qaytganda (Darhol / 30 s / 1 daq / 5 daq) qulflanadi; ilova o'zi ochgan kamera, galereya, to'lov sahifasi, skaner
+    uchun 3 daqiqagacha qayta so'ramaydi. 5 xato → 30 s kutish (har safar ×2, eng ko'pi 15 daqiqa, qayta ishga
+    tushirilganda ham saqlanadi). "PIN ni unutdim" — server sessiyasi tugatiladi, token va PIN o'chiriladi, qayta kirish;
+  - **eslatmalar** — qo'shilgan har bir kelgusi hashar uchun 1 kun va 2 soat oldin mahalliy bildirishnoma
+    (`@capacitor/local-notifications`, kanal "Eslatmalar"; tunda tushadigan 1 kunlik eslatma kechqurun 21:00 ga suriladi),
+    chiqilsa / o'chirilsa / yakunlansa bekor qilinadi; bosilsa hashar sahifasi ochiladi; Sozlamalarda o'chirsa bo'ladi;
+  - **QR skaner** — `@capacitor-mlkit/barcode-scanning` (Google'ning tayyor skaneri yoki kamera oynasi + chiroq);
+    ML Kit modeli APK ichiga **qo'shilmaydi** (`android/app/build.gradle`: Google Play xizmatlari orqali yuklanadigan
+    "thin" `play-services-mlkit-barcode-scanning`) — APK ~35 MB o'rniga ~15 MB. Play xizmatlarisiz telefonlarda
+    (masalan, Huawei) skaner tushunarli xato beradi, ko'ngilli 6 xonali kodni qo'lda kiritadi;
+  - **to'lov sahifasi** — ilova ichida (`@capacitor/browser`, Custom Tabs), qaytgach holat avtomatik tekshiriladi;
+  - ruxsatlar: `USE_BIOMETRIC`, `POST_NOTIFICATIONS`, `CAMERA`, `RECEIVE_BOOT_COMPLETED`, `WAKE_LOCK`
+    (`SCHEDULE_EXACT_ALARM` olib tashlangan — eslatmalar bir necha daqiqa aniqlik bilan yetarli).
 
 ## Deploy (GitHub Actions)
 
@@ -303,9 +383,10 @@ Hech qanday qo'lda qadam kerak emas: push qilinsa sayt va APK yangilanadi.
 Ketma-ketlik:
 
 1. **test** — `npm ci` → `npm run build` → `npm run test:storage` → `npm run db:local` →
-   ikkita `wrangler dev` (to'liq lokal, tokensiz, `GEO_MOCK:1` va `EMAIL_MOCK:1`): D1 rejimi (:8787) va Durable
-   Object rejimi (:8788, `wrangler.deploy.json --storage do`, alohida `--persist-to`) → `npm run test:api` ikkala
-   rejimda (`tests/email.test.mjs` email o'chiq holat uchun o'zi uchinchi, vaqtinchalik `wrangler dev` ochadi).
+   ikkita `wrangler dev` (to'liq lokal, tokensiz, `GEO_MOCK:1`, `EMAIL_MOCK:1` va SOXTA Payme/Click kalitlari): D1
+   rejimi (:8787) va Durable Object rejimi (:8788, `wrangler.deploy.json --storage do`, alohida `--persist-to`) →
+   `npm run test:api` ikkala rejimda, `REQUIRE_PAYMENTS=1` bilan (`tests/email.test.mjs` email o'chiq holat uchun o'zi
+   uchinchi, vaqtinchalik `wrangler dev` ochadi).
 2. **apk** (test o'tsa):
    - ilova API manzili: `https://<wrangler.jsonc name>.<subdomen>.workers.dev`; subdomen
      `GET /accounts/{id}/workers/subdomain` dan olinadi (bo'lmasa ogohlantirish bilan `davlatsudekspert`);
@@ -332,6 +413,9 @@ Ketma-ketlik:
    - `wrangler deploy --config wrangler.deploy.json` (custom domen faqat xavfsiz bo'lsa — pastga qarang);
    - **email:** `RESEND_API` secret bo'lsa — Worker secret'lari `RESEND_API_KEY` va `RESEND_FROM` yoziladi
      (pastda: [Email (Resend)](#email-resend)); bo'sh bo'lsa — o'tkazib yuboriladi;
+   - **to'lovlar:** `HASHARCHILAR_PAYME_*` / `HASHARCHILAR_CLICK_*` secret'laridan bo'sh bo'lmaganlari Worker
+     secret'lariga (`PAYME_MERCHANT_ID` va h.k.) yoziladi, bo'shlari o'tkaziladi, hech biri o'chirilmaydi
+     ([To'lovlar](#tolovlar-payme--click--qolda));
    - `/api/health` kutiladi;
    - **baza tekshiruvi:** `/api/stats` va `/api/hashars?status=COMPLETED` to'g'ri JSON qaytarishi kerak
      (`/api/health` bazaga tegmaydi). DO rejimida obyekt va migratsiyalar shu so'rovda ishga tushadi —
@@ -387,6 +471,10 @@ olib tashlash alohida migratsiya talab qiladi.
 | `CLOUDFLARE_API_TOKEN` | ha | Hisob `31c4b3d8ece4b65de515debc4552334a`. Kerakli ruxsatlar: **Account → Workers Scripts: Edit, Workers R2 Storage: Read** (bucket yo'q bo'lsa Edit), **Account Settings: Read**. Ixtiyoriy: **D1: Edit** (birinchi deploy'dan oldin bo'lsa D1 tanlanadi), custom domen uchun **Zone → Workers Routes: Edit, DNS: Read**. Token faqat wrangler / Cloudflare API qadamlariga beriladi: `npm ci`, build va Gradle uni ko'rmaydi |
 | `HASHARCHILAR_ADMIN_PHONES` | yo'q | admin panel egalari, vergul bilan (`+998901234567,+998...`); deploy'da Worker secret `ADMIN_PHONES` ga yoziladi (README → Admin panel) |
 | `RESEND_API` | yo'q (email uchun kerak) | Resend API kaliti (`re_...`); deploy'da Worker secret `RESEND_API_KEY` ga, jo'natuvchi — `RESEND_FROM` ga yoziladi ([Email (Resend)](#email-resend)). Bo'lmasa email o'chiq: eski telefon+parol ro'yxati ishlaydi |
+| `HASHARCHILAR_PAYME_MERCHANT_ID`, `HASHARCHILAR_PAYME_KEY` | yo'q (Payme uchun kerak) | Payme Business kassasi ID si va kaliti → Worker secret'lari `PAYME_MERCHANT_ID`, `PAYME_KEY` ([To'lovlar](#tolovlar-payme--click--qolda)) |
+| `HASHARCHILAR_PAYME_TEST_KEY`, `HASHARCHILAR_PAYME_TEST_MODE` | yo'q | sinov kassasi: test kaliti va `1` (checkout `test.paycom.uz`, callback test kaliti bilan) → `PAYME_TEST_KEY`, `PAYME_TEST_MODE` |
+| `HASHARCHILAR_CLICK_SERVICE_ID`, `HASHARCHILAR_CLICK_MERCHANT_ID`, `HASHARCHILAR_CLICK_SECRET_KEY` | yo'q (Click uchun kerak) | Click Shop API → `CLICK_SERVICE_ID`, `CLICK_MERCHANT_ID`, `CLICK_SECRET_KEY` |
+| `HASHARCHILAR_CLICK_MERCHANT_USER_ID` | yo'q | → `CLICK_MERCHANT_USER_ID` (Click Merchant API uchun saqlanadi; Shop API havolasida ishlatilmaydi) |
 | `HASHARCHILAR_KEYSTORE_BASE64` | yo'q (tavsiya etiladi) | `base64 -w0 release.jks` natijasi |
 | `HASHARCHILAR_KEYSTORE_PASSWORD` | yo'q | keystore paroli (kalit paroli ham shu bo'lishi kerak) |
 | `HASHARCHILAR_KEY_ALIAS` | yo'q | kalit aliasi |
@@ -463,6 +551,43 @@ Qoidalar:
   uning hasharlari saytda qoladi.
 - CI'siz qo'lda: `printf '%s' '+998901234567' | npx wrangler secret put ADMIN_PHONES --name hasharchilar-api`.
 
+### To'lovlar (Payme / Click / qo'lda)
+
+Hashar e'lon qilish narxi — admin sozlamasi `hashar_fee` (so'm, standart **5000**, 0 — bepul): admin panel yoki
+`POST /api/admin/settings {"hashar_fee": 5000, "manual_payment_note": "..."}`. Narx > 0 bo'lsa yangi hashar
+`payment_status: 'unpaid'` — to'languncha ommaga ko'rinmaydi (faqat egasi va admin), to'langach `paid` → e'lon qilinadi va
+egasiga bildirishnoma boradi. Migratsiyadan oldingi hasharlar to'langan hisoblanadi.
+Narx > 0 bo'lsa hashar yaratishni faqat v4 mijoz (`?client=4` — to'lov sahifasi bor sayt/APK) qila oladi; o'rnatilgan
+v3/v2 APK 403 `{"code": "app_update_required", "error": "Ilovani yangilang: hashar e'lon qilish endi to'lov orqali"}`
+oladi (aks holda u yashirin to'lanmagan hasharni "e'lon qilindi" deb ko'rsatardi). Narx 0 ga tushirilsa mavjud
+to'lanmaganlar ommaviy e'lon qilinmaydi (spam himoyasi): egasi to'lov sahifasini ochganda hashari o'zi bepul e'lon
+qilinadi (`waived` + bildirishnoma), "0 so'm to'lang" ko'rsatilmaydi.
+
+1. **Payme Business** kabinetida kassa: *Endpoint URL* — `https://hasharchilar.uz/api/payments/payme` (yoki
+   workers.dev manzili), hisob (account) maydoni — **`hashar_id`**. GitHub secret'lari: `HASHARCHILAR_PAYME_MERCHANT_ID`
+   (kassa ID), `HASHARCHILAR_PAYME_KEY` (kalit). Sinov kassasi uchun qo'shimcha `HASHARCHILAR_PAYME_TEST_KEY` va
+   `HASHARCHILAR_PAYME_TEST_MODE` = `1` (havolalar `test.paycom.uz` ga, callback test kaliti bilan tekshiriladi);
+   productionga o'tishda `HASHARCHILAR_PAYME_TEST_MODE` = `0` qiling.
+2. **Click** kabinetida servis: *Prepare URL* — `https://hasharchilar.uz/api/payments/click/prepare`, *Complete URL* —
+   `.../api/payments/click/complete`. Secret'lar: `HASHARCHILAR_CLICK_SERVICE_ID`, `HASHARCHILAR_CLICK_MERCHANT_ID`,
+   `HASHARCHILAR_CLICK_SECRET_KEY` (+ ixtiyoriy `HASHARCHILAR_CLICK_MERCHANT_USER_ID`).
+3. Deploy'dagi "To'lov provayderlari" qadami faqat **bo'sh bo'lmagan** secret'larni Worker secret'lariga
+   (`PAYME_MERCHANT_ID` va h.k.) yozadi: qiymatlar niqoblanadi, wrangler'ga stdin orqali beriladi, bo'shlari o'tkazib
+   yuboriladi, mavjud Worker secret'lari hech qachon o'chirilmaydi. Natija: `GET /api/config` →
+   `payments: {payme: true, click: true, manual: true}`. CI'siz:
+   `printf '%s' '<kalit>' | npx wrangler secret put PAYME_KEY --name hasharchilar-api`.
+4. **Qo'lda to'lov** provayder sozlanmagan bo'lsa ham ishlaydi: egasiga `manual_payment_note` matni (masalan, karta
+   raqami va izohga nima yozish) ko'rsatiladi, admin pul tushganini ko'rib `POST /api/admin/hashars/:id/mark-paid`
+   (yoki `{"waive": true}` — bepul e'lon) bilan tasdiqlaydi. Barcha to'lovlar: `GET /api/admin/payments`.
+
+Xavfsizlik: Payme — `Authorization: Basic` (`Paycom:<kalit>`) doimiy vaqtda tekshiriladi; Click — md5 imzo
+(`CLICK_SECRET_KEY`); summa, hashar holati va tranzaksiya holatlari server tomonda tekshiriladi, takroriy callback'lar
+idempotent, bitta hasharga bir vaqtda bitta kutilayotgan Payme tranzaksiyasi, 12 soatda bajarilmagani bekor qilinadi.
+Hashar o'chirilsa ham to'lov tarixi (`payments`) saqlanadi. Protokol tafsilotlari — [`SPEC.md`](./SPEC.md) 5.3.
+
+QR davomat kodi Worker secret **`CHECKIN_SECRET`** (ixtiyoriy, CI yozmaydi) bilan imzolanadi; u bo'lmasa bazada bir
+marta yaratiladigan tasodifiy kalit ishlatiladi (`settings.checkin_secret`, API orqali hech qachon qaytarilmaydi).
+
 ### Sayt manzili va `hasharchilar.uz` domenini ulash
 
 Sayt `https://hasharchilar-api.davlatsudekspert.workers.dev` manzilida ishlaydi. Android ilova ham doim shu
@@ -505,7 +630,7 @@ Email xizmati **yoqilgan** bo'lsa (`RESEND_API_KEY` bor yoki lokal/test `EMAIL_M
   kira oladi, hamma narsani ko'radi, profilini tahrirlaydi va email qo'sha oladi. Lekin hashar yaratish,
   qo'shilish, chiqish, yakunlash, o'z hasharini o'chirish va izoh yozish — 403
   `{"error": "Avval emailingizni tasdiqlang", "code": "email_unverified"}` (`requireVerifiedEmail`).
-  Eski v2 APK (`?client=3` belgisiz; v3 sayt/APK uni query'da yuboradi — CORS o'zgarmaydi, yangi APK eski worker bilan ham ishlaydi) shu holatda 403 `app_update_required` "Ilovani yangilang: …" oladi.
+  Eski v2 APK (`?client=<n>` belgisiz; v3+ sayt/APK versiyasini query'da yuboradi — v3: `?client=3`, v4: `?client=4`; CORS o'zgarmaydi, yangi APK eski worker bilan ham ishlaydi) shu holatda 403 `app_update_required` "Ilovani yangilang: …" oladi.
   Admin moderatsiyasi (`/api/admin/*`) bunga kirmaydi.
 - **Sayt/APK:** bunday foydalanuvchi kirganda to'liq ekranli "Emailni tasdiqlang" bosqichi (email → kod) chiqadi;
   "Keyinroq" bosilsa ko'rish sahifalarida yopsa bo'ladigan eslatma (banner) turadi, yozuvchi amalga urinish
@@ -532,7 +657,7 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 
 | Metod | Yo'l | Auth | Tavsif |
 |---|---|---|---|
-| GET | `/api/config` | – | `{email_enabled}` |
+| GET | `/api/config` | – | `{email_enabled, hashar_fee (so'm; 0 — bepul), payments: {payme, click, manual}, manual_payment_note}` |
 | POST | `/api/auth/register/start` | – | `{name, phone, email, password}` → `{ok, email, expires_in: 600, resend_in: 60}` (+ `dev_code` faqat `EMAIL_MOCK=1`). Telefon/email band — 409, 60 s ichida qayta — 429, email o'chiq — 503 |
 | POST | `/api/auth/register/verify` | – | `{email, code}` → 201 `{token, user}`. Noto'g'ri kod — 400 `"Kod noto'g'ri"`, eskirgan/o'lgan — 400 `"Kod eskirgan, yangisini so'rang"`, band — 409 |
 | POST | `/api/auth/register` | – | eski: `{name, phone, password}` → 201. Email yoqilgan bo'lsa — 410 `email_required` |
@@ -552,9 +677,9 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | POST / DELETE | `/api/hashars/:id/join` | ✓ | qo'shilish (idempotent; `max_volunteers` to'lgan bo'lsa 409 `"Joy qolmadi"`) / chiqish (egasi chiqa olmaydi) |
 | GET | `/api/hashars/:id/comments` | ixtiyoriy | `[{id, body, created_at, user:{id,name,avatar_url}, is_mine}]` (oxirgi 200 ta, eski → yangi) |
 | POST | `/api/hashars/:id/comments` | ✓ | `{body}` (1–500 belgi) → 201 izoh; 20 ta / soat |
-| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin |
+| DELETE | `/api/comments/:id` | ✓ | o'z izohi yoki admin (izoh bildirishnomalari ham o'chadi) |
 | GET | `/api/users/:id` | ixtiyoriy | ommaviy profil `{id, name, bio, district, avatar_url, created_at, stats, hashars}` — telefon YO'Q |
-| GET | `/api/leaderboard` | – | `?period=all\|month` → top 50 `[{user, joined, completed, created, score}]` |
+| GET | `/api/leaderboard` | – | `?period=all\|month` → top 50 `[{user, joined, completed, created, checkins, score}]`; `score = completed·10 + joined·3 + created·5 + checkins·5` (faqat e'lon qilingan hasharlar) |
 | GET | `/api/geo/search` | – | `?q=` (2–120 belgi) → `[{name, display, lat, lng}]` (≤ 6, faqat O'zbekiston) |
 | GET | `/api/geo/reverse` | – | `?lat=&lng=` → `{display, district, city}` |
 | POST | `/api/hashars/:id/complete` | ✓ egasi | multipart `photo` ("Keyin" rasmi) → COMPLETED |
@@ -568,12 +693,31 @@ To'liq tavsif va `HasharDTO` maydonlari [`SPEC.md`](./SPEC.md) ning 5-bo'limida.
 | DELETE | `/api/admin/users/:id` | ✓ admin | foydalanuvchi + sessiyalari, email kodlari, qatnashuvlari, izohlari, hasharlari, ularning rasmlari va avatari |
 | GET | `/api/admin/hashars` | ✓ admin | `?status=&q=&offset=&limit=` → `{items: HasharDTO + creator.phone, total}` |
 | DELETE | `/api/admin/hashars/:id` | ✓ admin | istalgan holatdagi hashar (R2 rasmlari va izohlari bilan) |
-| DELETE | `/api/admin/comments/:id` | ✓ admin | istalgan izohni o'chirish |
+| DELETE | `/api/admin/comments/:id` | ✓ admin | istalgan izohni o'chirish (bildirishnomalardagi parchasi bilan) |
+| GET | `/api/hashars/:id/payment` | ✓ egasi/admin | `{hashar_id, status, amount, currency, providers, payme_url?, click_url?, manual_note?, history}`; `amount` — to'lanmaganda joriy narx, to'langanda haqiqatan to'langan summa (yozuv yo'q — `null`); narx 0 bo'lsa egasi ochganda to'lanmagan hashar bepul e'lon qilinadi |
+| POST | `/api/payments/payme` | Basic `Paycom:<kalit>` | Payme Merchant API (JSON-RPC): Check/Create/Perform/Cancel/CheckTransaction, GetStatement |
+| POST | `/api/payments/click/prepare`, `/complete` | md5 imzo | Click Shop API (form-urlencoded) |
+| GET / POST | `/api/admin/settings` | ✓ admin | `{hashar_fee, manual_payment_note, payments, payme_test_mode}` / `{hashar_fee?, manual_payment_note? (≤ 500)}` |
+| GET | `/api/admin/payments` | ✓ admin | `?provider=&status=&hashar_id=&q=&offset=&limit=` → `{items, total, summary: {paid_count, paid_amount}}` |
+| POST | `/api/admin/hashars/:id/mark-paid` | ✓ admin | `{note?, amount?, waive?}` — qo'lda tasdiqlash (`manual`) yoki bepul e'lon (`waived`; summa 0 ham shunday); to'lanmagan bo'lmasa 409 |
+| POST / DELETE | `/api/hashars/:id/save` | ✓ | saqlash / olib tashlash → `{saved}` (idempotent) |
+| GET | `/api/me/saves` | ✓ | saqlangan `HasharDTO[]` (+ `saved_at`), `?offset=&limit=` (≤ 100) |
+| GET | `/api/me/notifications` | ✓ | `?before=<id>&limit=` (≤ 50) → `{items, unread_count, has_more, next_before}` |
+| GET | `/api/me/notifications/unread-count` | ✓ | `{count}` |
+| POST | `/api/me/notifications/read` | ✓ | `{ids: [..]}` yoki `{all: true}` → `{ok, updated, unread_count}` |
+| GET | `/api/hashars/:id/checkin-code` | ✓ egasi | hashar vaqtidan ±12 soat ichida: `{code, expires_at, refresh_in, url, opens_at, closes_at, ...}` (kod 10 daqiqada yangilanadi) |
+| POST | `/api/hashars/:id/checkin` | ✓ | `{code}` (yoki QR havolasi) → `{checked_in, checked_in_at}`; faqat qo'shilgan ko'ngilli, idempotent |
+| GET | `/api/hashars/:id/checkins` | ✓ egasi/admin | `{total, checked_in, items: [{user, joined_at, checked_in_at}]}` |
 
 `user` obyektida (`/api/me`, kirish, ro'yxat, profil) `is_admin`, `bio`, `district`, `avatar_url`, `email`, `email_verified` maydonlari bor.
 ✓ belgili yozuvchi amallar (hashar yaratish, qo'shilish/chiqish, yakunlash, o'chirish, izoh) email yoqilgan bo'lsa
 tasdiqlangan emailni ham talab qiladi (403 `email_unverified`).
 `HasharDTO` da (v3): `category`, `max_volunteers`, `comment_count`, `creator.avatar_url`; tafsilotdagi `volunteers[]` da `avatar_url`.
+v4: `saved`, `checked_in_at` (o'z davomati), `checked_in_count`, `payment_status` (faqat egasi va admin uchun); egasi/admin
+tafsilotida `volunteers[].checked_in_at`. To'lanmagan (`unpaid`) hashar boshqalarga 404 va ro'yxat/xarita/qidiruv/profil/
+statistika/reytingda ko'rinmaydi (egasi o'zinikini ko'radi, admin — tafsilot va `/api/admin/hashars?payment=unpaid`).
+Yangi xato kodlari: `unpaid_limit` (bir vaqtda ≤ 5 ta to'lanmagan hashar), `payment_required`, `checkin_closed`,
+`checkin_invalid`, `not_joined`.
 
 **Geo proksi** (`worker/geo.js`): mijoz Nominatim'ga to'g'ridan-to'g'ri murojaat qilmaydi. Worker
 `format=jsonv2, countrycodes=uz, accept-language=uz,ru, limit=6` va `User-Agent: hasharchilar.uz/1.0 (+https://hasharchilar-api.davlatsudekspert.workers.dev)`
@@ -607,5 +751,13 @@ CORS quyidagi originlarga ruxsat beradi: `https://localhost` (APK), `capacitor:/
 - **Durable Object rejimi:** butun baza bitta obyektda (`main`, hudud `eeur`) — so'rovlar ketma-ket bajariladi.
   Bu jamoat sayti hajmi uchun yetarli. DO bazasini `wrangler d1 execute/export` bilan ko'rib yoki eksport qilib
   bo'lmaydi (D1 ga o'tish — yuqoridagi "Keyinchalik D1 ga o'tish").
-- **APK hajmi:** statik fayl sifatida ≤ 25 MiB bo'lishi kerak (hozir ~3.6 MB); CI buni tekshiradi.
+- **APK hajmi:** statik fayl sifatida ≤ 25 MiB bo'lishi kerak (v4 dan ~15 MB: biometrik, bildirishnoma, skaner,
+  brauzer plaginlari; ML Kit modeli APK ga qo'shilmagan); CI buni tekshiradi.
+- **v4 native qismlari (ilova qulfi, barmoq izi, eslatmalar, QR skaner) haqiqiy qurilmada sinalmagan** — faqat
+  Chromium'da Capacitor stub'lari bilan avtomatik sinalgan.
 - Push-bildirishnomalar va avtomatik moderatsiya hozircha yo'q (qo'lda boshqarish — admin panel, `#admin`).
+  Bildirishnomalar markazi — ilova ichida (`/api/me/notifications`, so'rov bilan yangilanadi).
+- **To'lovlar haqiqiy Payme/Click kassasida sinalmagan** — protokol spetsifikatsiya bo'yicha va soxta kalitlar bilan
+  avtomatik testlarda sinalgan. Payme fiskal chek ma'lumotlari (`detail`, MXIK kodi) yuborilmaydi; kassa fiskalizatsiyani
+  talab qilsa `CheckPerformTransaction` javobiga qo'shish kerak bo'ladi. Narx o'zgarsa eski (to'lanmagan) havola summasi
+  mos kelmaydi — egasi to'lov sahifasini qayta ochadi (yangi summa bilan havola).

@@ -3,9 +3,9 @@ import { useState } from 'react';
 import { CrownIcon, InfoIcon, TrophyIcon } from '../components/icons.jsx';
 import PullToRefresh from '../components/PullToRefresh.jsx';
 import { Avatar, btn, EmptyState, ErrorState, Link, PageHeader, Segmented } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { navigate } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
 import { cx } from '../lib/utils.js';
 
@@ -49,7 +49,7 @@ function Podium({ rows, meId }) {
 export default function LeaderboardPage() {
   const { user } = useAuth();
   const [period, setPeriod] = useState('month');
-  const lb = useApi(`leaderboard:${period}`, () => api.leaderboard(period));
+  const lb = useApi(...Q.leaderboard(period));
   const rows = Array.isArray(lb.data) ? lb.data : [];
   const myIndex = user ? rows.findIndex((r) => r.user.id === user.id) : -1;
 

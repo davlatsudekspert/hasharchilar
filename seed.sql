@@ -2,6 +2,8 @@
 -- Qo'llash: npx wrangler d1 execute hasharchilar --local --file=seed.sql
 -- Barcha demo foydalanuvchilar paroli: demo1234. Emaillar soxta (@example.com), tasdiqlangan —
 -- telefon yoki email bilan kirish mumkin (masalan: aziz@example.com / demo1234).
+-- v4: 1–4-hasharlar e'lon qilingan (to'langan), 5-hashar to'lanmagan (faqat egasi — Jasur — ko'radi);
+-- hashar narxi sozlanmagan → standart 5000 so'm.
 
 INSERT OR IGNORE INTO users (id, phone, name, password_hash, bio, district, email, email_verified_at) VALUES
   (1, '+998901112233', 'Aziz Karimov',    'pbkdf2$100000$Lqsxf80VEbI2gU5IXbPRKQ==$Ov3ojYnb5rEmmOR23iWGeU0z+/hqymmdfO6jjUEJE5k=',
@@ -29,17 +31,25 @@ INSERT OR IGNORE INTO hashars (id, title, description, address, lat, lng, date_t
       'Sergeli tumani, Yangi Sergeli', 41.2273, 69.2189, '2026-09-27T08:00',
       '["Belkurak","Etik"]', 'COMPLETED', 2, '2026-09-27 12:30:00', 'cleaning', NULL);
 
+-- v4: to'lanmagan (e'lon qilinmagan) namuna hashar
+INSERT OR IGNORE INTO hashars (id, title, description, address, lat, lng, date_time, items, status, creator_id, completed_at, category, max_volunteers, payment_status) VALUES
+  (5, 'Ko''cha chiroqlarini bo''yash',
+      'To''lov kutilmoqda — bu hashar to''lovdan keyin e''lon qilinadi (hozircha faqat egasiga ko''rinadi).',
+      'Chilonzor tumani, 12-kvartal', 41.2851, 69.2102, '2027-05-02T09:00',
+      '["Bo''yoq","Cho''tka"]', 'PENDING', 3, NULL, 'repair', NULL, 'unpaid');
+
 -- Demo rasmlar R2 da emas, statik fayl sifatida (public/demo/) beriladi
 INSERT OR IGNORE INTO hashar_media (id, hashar_id, photo_type, r2_key, r2_url) VALUES
   (1, 4, 'BEFORE', 'demo/before.svg', '/demo/before.svg'),
   (2, 4, 'AFTER',  'demo/after.svg',  '/demo/after.svg');
 
--- Tashkilotchi har doim o'z hasharining qatnashuvchisi
-INSERT OR IGNORE INTO volunteers (hashar_id, user_id) VALUES
-  (1, 1), (1, 2),
-  (2, 2), (2, 1), (2, 3),
-  (3, 3),
-  (4, 2), (4, 1), (4, 3);
+-- Tashkilotchi har doim o'z hasharining qatnashuvchisi; 4-hasharda ikki ko'ngilli QR davomatdan o'tgan
+INSERT OR IGNORE INTO volunteers (hashar_id, user_id, checked_in_at) VALUES
+  (1, 1, NULL), (1, 2, NULL),
+  (2, 2, NULL), (2, 1, NULL), (2, 3, NULL),
+  (3, 3, NULL),
+  (4, 2, NULL), (4, 1, '2026-09-27 03:05:00'), (4, 3, '2026-09-27 03:12:00'),
+  (5, 3, NULL);
 
 -- Izohlar
 INSERT OR IGNORE INTO comments (id, hashar_id, user_id, body) VALUES
@@ -47,3 +57,21 @@ INSERT OR IGNORE INTO comments (id, hashar_id, user_id, body) VALUES
   (2, 1, 1, 'Rahmat! Soat 9:00 da bog'' kirish qismida uchrashamiz.'),
   (3, 2, 3, 'Ko''chatlar qaysi navda? Suv uchun chelak kerakmi?'),
   (4, 4, 1, 'Zo''r natija bo''ldi, hammaga rahmat!');
+
+-- v4: qo'lda to'lov izohi (namuna; haqiqiy karta raqami emas)
+INSERT OR IGNORE INTO settings (key, value) VALUES
+  ('manual_payment_note', 'Namuna (lokal dev): qo''lda to''lov uchun administrator bilan bog''laning.');
+
+-- v4: saqlanganlar
+INSERT OR IGNORE INTO saves (user_id, hashar_id) VALUES (1, 2), (1, 3), (3, 1);
+
+-- v4: bildirishnomalar (Aziz uchun ikkitasi o'qilmagan)
+INSERT OR IGNORE INTO notifications (id, user_id, type, hashar_id, actor_id, data, read_at) VALUES
+  (1, 1, 'join', 1, 2, '{"title":"Mahalla bog''ini tozalash"}', NULL),
+  (2, 1, 'comment', 1, 2, '{"title":"Mahalla bog''ini tozalash","comment_id":1,"excerpt":"Men ham boraman! Qo''lqop olib kelaman."}', NULL),
+  (3, 1, 'completed', 4, 2, '{"title":"Ariq bo''yini tozalash"}', datetime('now')),
+  (4, 2, 'comment', 2, 3, '{"title":"Ko''cha bo''yiga 50 ta ko''chat ekish","comment_id":3,"excerpt":"Ko''chatlar qaysi navda?"}', NULL);
+
+-- v4: namuna to'lov (qo'lda tasdiqlangan, 5000 so'm = 500000 tiyin)
+INSERT OR IGNORE INTO payments (id, hashar_id, user_id, provider, amount, state, provider_tx_id, create_time, perform_time, note) VALUES
+  (1, 3, 3, 'manual', 500000, 1, 'manual:seed-demo-1', 1790000000000, 1790000000000, 'Namuna to''lov');

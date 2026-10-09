@@ -4,17 +4,17 @@ import { HasharRow } from '../components/HasharCard.jsx';
 import { AlertIcon, ArrowLeftIcon, FlagIcon, MedalIcon } from '../components/icons.jsx';
 import { BadgesGrid, ProfileHero } from '../components/ProfileParts.jsx';
 import { btn, EmptyState, ErrorState, Link } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { hideSplash } from '../lib/native.js';
 import { goBack, navigate } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
 import { cx } from '../lib/utils.js';
 
 export default function UserPage({ route }) {
   const id = route.params.id;
   const { user } = useAuth();
-  const u = useApi(`user:${id}`, () => api.user(id));
+  const u = useApi(...Q.user(id));
 
   useEffect(() => {
     if (!u.loading) hideSplash();
@@ -78,7 +78,7 @@ export default function UserPage({ route }) {
         {hashars.length === 0 ? (
           <EmptyState title="Hali hashar e'lon qilmagan" text={`${p.name.split(' ')[0]} hozircha faqat qatnashuvchi sifatida faol.`} />
         ) : (
-          <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+          <ul className="stagger grid grid-cols-1 gap-3 lg:grid-cols-2">
             {hashars.map((h) => (
               <li key={h.id}>
                 <HasharRow hashar={h} />

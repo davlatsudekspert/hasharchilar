@@ -2,6 +2,7 @@
 // orqali dinamik yuklanadi — bosh sahifa bundle'iga kirmaydi.
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import './map.css';
 import { watchNetwork } from './native.js';
 
 export { maplibregl };
@@ -10,7 +11,20 @@ export const STYLE_LIGHT = 'https://tiles.openfreemap.org/styles/liberty';
 export const STYLE_DARK = 'https://tiles.openfreemap.org/styles/dark';
 export const styleUrl = (dark) => (dark ? STYLE_DARK : STYLE_LIGHT);
 
-export const COLORS = { PENDING: '#f59e0b', COMPLETED: '#059669', PAST: '#94a3b8' }; // PAST — sanasi o'tgan, yakunlanmagan
+// Pin ranglari: COMPLETED — joriy aksent (CSS o'zgaruvchisi; SVG style orqali — aksent almashsa pinlar ham darhol o'zgaradi)
+export const COLORS = { PENDING: '#f59e0b', COMPLETED: 'var(--a-600)', PAST: '#94a3b8' }; // PAST — sanasi o'tgan, yakunlanmagan
+
+/** Klaster qatlamlari uchun aksent ranglari (MapLibre CSS o'zgaruvchisini tushunmaydi — hisoblangan qiymat). */
+export function accentPalette() {
+  const v = (n, f) => {
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim() || f;
+    } catch {
+      return f;
+    }
+  };
+  return { a500: v('--a-500', '#10b981'), a600: v('--a-600', '#059669'), a700: v('--a-700', '#047857'), a800: v('--a-800', '#065f46') };
+}
 export const TASHKENT = { lat: 41.3111, lng: 69.2797 };
 
 // Har xarita uchun: so'ralgan uslub URL'i va u yuklanganmi (oflayn ochilganda qayta urinish uchun)
@@ -107,13 +121,13 @@ export function pinElement(kind, { selected = false, label } = {}) {
     kind === 'COMPLETED'
       ? '<path d="M11 15.5l3.3 3.3L21 12" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>'
       : '<circle cx="16" cy="15" r="5.2" fill="#fff"/>';
-  el.innerHTML = `<svg width="34" height="43" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 39s13-12.4 13-23A13 13 0 0 0 3 16c0 10.6 13 23 13 23Z" fill="${color}" stroke="#fff" stroke-width="2.5"/>${glyph}</svg>`;
+  el.innerHTML = `<svg width="34" height="43" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 39s13-12.4 13-23A13 13 0 0 0 3 16c0 10.6 13 23 13 23Z" style="fill:${color}" stroke="#fff" stroke-width="2.5"/>${glyph}</svg>`;
   return el;
 }
 
 /** Tanlash pini (yaratish sahifasi, mini xarita). */
-export function pickPinSvg(color = '#059669') {
-  return `<svg width="44" height="56" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 39s13-12.4 13-23A13 13 0 0 0 3 16c0 10.6 13 23 13 23Z" fill="${color}" stroke="#fff" stroke-width="2.5"/><circle cx="16" cy="15" r="5.2" fill="#fff"/></svg>`;
+export function pickPinSvg(color = 'var(--a-600)') {
+  return `<svg width="44" height="56" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 39s13-12.4 13-23A13 13 0 0 0 3 16c0 10.6 13 23 13 23Z" style="fill:${color}" stroke="#fff" stroke-width="2.5"/><circle cx="16" cy="15" r="5.2" fill="#fff"/></svg>`;
 }
 
 /** Foydalanuvchi joylashuvi nuqtasi. */

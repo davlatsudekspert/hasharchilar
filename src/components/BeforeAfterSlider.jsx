@@ -19,7 +19,7 @@ export default function BeforeAfterSlider({ before, after, alt = '', className, 
       <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-slate-950/70 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white backdrop-blur">
         Oldin
       </span>
-      <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
+      <span className="pointer-events-none absolute right-3 top-3 rounded-full bg-brand-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">
         Keyin
       </span>
       <div className="pointer-events-none absolute inset-y-0 w-0.5 -translate-x-1/2 bg-white shadow-[0_0_10px_rgba(0,0,0,.4)]" style={{ left: `${pos}%` }}>

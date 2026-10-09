@@ -4,8 +4,8 @@
 // nuqtani shu panellar orasidagi ko'rinadigan qismga keltiradi.
 import { useEffect, useRef } from 'react';
 import { mediaUrl } from '../../lib/config.js';
-import { createMap, fitTo, maplibregl, padOffset, pinElement, setMapStyle, toGeoJSON, userDotElement } from '../../lib/map.js';
-import { useTheme } from '../../lib/theme.jsx';
+import { accentPalette, createMap, fitTo, maplibregl, padOffset, pinElement, setMapStyle, toGeoJSON, userDotElement } from '../../lib/map.js';
+import { onAccentChange, useTheme } from '../../lib/theme.jsx';
 import { cx, formatDateTime, statusOf, volunteersLabel } from '../../lib/utils.js';
 import MapAttribution from './MapAttribution.jsx';
 
@@ -13,8 +13,23 @@ const SRC = 'hashars';
 const CLUSTER_MAX_ZOOM = 14;
 const SELECT_ZOOM = CLUSTER_MAX_ZOOM + 1; // tanlangan nuqta klaster ichida qolmasin
 
+/** Klaster ranglari joriy aksentdan. */
+function clusterColors() {
+  const p = accentPalette();
+  return { halo: p.a500, fill: ['step', ['get', 'point_count'], p.a600, 10, p.a700, 50, p.a800] };
+}
+
+/** Aksent almashganda klaster qatlamlari qayta bo'yaladi (pinlar CSS o'zgaruvchisi bilan o'zi o'zgaradi). */
+function recolor(map) {
+  if (!map.getLayer('clusters')) return;
+  const c = clusterColors();
+  map.setPaintProperty('cluster-halo', 'circle-color', c.halo);
+  map.setPaintProperty('clusters', 'circle-color', c.fill);
+}
+
 function addLayers(map, data) {
   if (map.getSource(SRC)) return;
+  const colors = clusterColors();
   map.addSource(SRC, { type: 'geojson', data, cluster: true, clusterRadius: 52, clusterMaxZoom: CLUSTER_MAX_ZOOM });
   map.addLayer({
     id: 'cluster-halo',
@@ -22,7 +37,7 @@ function addLayers(map, data) {
     source: SRC,
     filter: ['has', 'point_count'],
     paint: {
-      'circle-color': '#10b981',
+      'circle-color': colors.halo,
       'circle-opacity': 0.22,
       'circle-radius': ['step', ['get', 'point_count'], 26, 10, 32, 50, 40],
     },
@@ -33,7 +48,7 @@ function addLayers(map, data) {
     source: SRC,
     filter: ['has', 'point_count'],
     paint: {
-      'circle-color': ['step', ['get', 'point_count'], '#059669', 10, '#047857', 50, '#065f46'],
+      'circle-color': colors.fill,
       'circle-radius': ['step', ['get', 'point_count'], 18, 10, 23, 50, 29],
       'circle-stroke-width': 3,
       'circle-stroke-color': '#ffffff',
@@ -193,8 +208,10 @@ export default function HasharMap({
 
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(boxRef.current);
+    const offAccent = onAccentChange(() => recolor(map));
     return () => {
       ro.disconnect();
+      offAccent();
       markersRef.current.forEach((m) => m.marker.remove());
       markersRef.current.clear();
       map.remove();

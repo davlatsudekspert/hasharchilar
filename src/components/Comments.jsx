@@ -136,7 +136,7 @@ export default function Comments({ hasharId, onCount }) {
               rows={1}
               placeholder={user ? 'Izoh yozing…' : 'Izoh uchun kiring'}
               className={cx(
-                'block max-h-40 min-h-12 w-full resize-y rounded-2xl border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-3 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15',
+                'block max-h-40 min-h-12 w-full resize-y rounded-2xl border border-line bg-surface px-4 py-3 text-[15px] text-ink outline-none placeholder:text-ink-3 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15',
                 body.length > MAX * 0.8 && 'pb-6',
               )}
             />
@@ -147,7 +147,7 @@ export default function Comments({ hasharId, onCount }) {
             disabled={busy || !body.trim()}
             aria-label="Izohni yuborish"
             className={cx(
-              'grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-emerald-600 text-white transition hover:bg-emerald-700 active:scale-95 disabled:opacity-40 dark:bg-emerald-500 dark:text-emerald-950',
+              'grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-600 text-white transition hover:bg-brand-700 active:scale-95 disabled:opacity-40 dark:bg-primary dark:text-brand-950',
             )}
           >
             {busy ? <Spinner /> : <SendIcon className="h-5 w-5" />}

@@ -357,6 +357,72 @@ export const TargetIcon = icon(
   </>,
 );
 export const MenuIcon = icon(<path d="M4 6h16M4 12h16M4 18h16" />);
+export const BellIcon = icon(
+  <>
+    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+  </>,
+);
+/** Xatcho'p: `filled` — to'ldirilgan (saqlangan). */
+export const BookmarkIcon = ({ filled, ...p }) => (
+  <svg {...base} {...p}>
+    <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2Z" fill={filled ? 'currentColor' : 'none'} />
+  </svg>
+);
+export const QrIcon = icon(
+  <>
+    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    <path d="M14 14h3v3h-3zM20 14v.01M14 20h.01M17 20h4v-3M20 17v.01" />
+  </>,
+);
+export const ScanIcon = icon(
+  <>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    <path d="M7 12h10" />
+  </>,
+);
+export const CardIcon = icon(
+  <>
+    <rect x="2" y="5" width="20" height="14" rx="2.5" />
+    <path d="M2 10h20M6 15h4" />
+  </>,
+);
+export const WalletIcon = icon(
+  <>
+    <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
+    <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
+  </>,
+);
+export const AwardIcon = icon(
+  <>
+    <circle cx="12" cy="8" r="6" />
+    <path d="M15.5 12.9 17 22l-5-3-5 3 1.5-9.1" />
+  </>,
+);
+export const PaletteIcon = icon(
+  <>
+    <circle cx="13.5" cy="6.5" r="1" fill="currentColor" />
+    <circle cx="17.5" cy="10.5" r="1" fill="currentColor" />
+    <circle cx="8.5" cy="7.5" r="1" fill="currentColor" />
+    <circle cx="6.5" cy="12.5" r="1" fill="currentColor" />
+    <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.6-.7 1.6-1.7 0-.4-.2-.8-.4-1.1-.3-.3-.4-.7-.4-1.1a1.6 1.6 0 0 1 1.6-1.7h2c3.1 0 5.6-2.5 5.6-5.6C22 6 17.5 2 12 2z" />
+  </>,
+);
+export const CheckAllIcon = icon(<path d="M18 6 7 17l-5-5M22 10l-7.5 7.5L13 16" />);
+export const HourglassIcon = icon(
+  <>
+    <path d="M5 22h14M5 2h14" />
+    <path d="M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2" />
+  </>,
+);
+export const BellOffIcon = icon(
+  <>
+    <path d="M8.7 3A6 6 0 0 1 18 8a21.3 21.3 0 0 0 .6 5M17 17H3s3-2 3-9a4.67 4.67 0 0 1 .3-1.7M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    <path d="m2 2 20 20" />
+  </>,
+);
 
 /** Kategoriya ikonkasi. */
 export const CATEGORY_ICONS = { cleaning: BroomIcon, greening: SproutIcon, repair: WrenchIcon, other: SparklesIcon };

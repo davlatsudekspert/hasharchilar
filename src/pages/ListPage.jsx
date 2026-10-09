@@ -14,13 +14,13 @@ import {
 import PullToRefresh from '../components/PullToRefresh.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, CardSkeleton, Chip, EmptyState, ErrorState, inputCls, labelCls, PageHeader, Segmented, Spinner } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { CATEGORIES } from '../lib/meta.js';
 import { GEO_MESSAGES, getCurrentPosition, hideSplash } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
 import { storage } from '../lib/storage.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
-import { compareHashars, cx, distanceKm, matchesQuery, sortHashars, tashkentNow } from '../lib/utils.js';
+import { compareHashars, cx, distanceKm, matchesQuery, tashkentNow } from '../lib/utils.js';
 
 const SORTS = [
   { value: 'date', label: 'Sana bo\'yicha' },
@@ -33,7 +33,7 @@ const VIEW_KEY = 'hashar_list_view';
 
 export default function ListPage({ route }) {
   const toast = useToast();
-  const list = useApi('hashars:all', () => api.listHashars().then((l) => sortHashars(Array.isArray(l) ? l : [])));
+  const list = useApi(...Q.hashars);
   const [q, setQ] = useState(route.query.q || '');
   const [status, setStatus] = useState(route.query.status || 'PENDING');
   const [cat, setCat] = useState(route.query.cat || 'all');
@@ -147,11 +147,11 @@ export default function ListPage({ route }) {
             onClick={() => setShowFilters((v) => !v)}
             aria-expanded={showFilters}
             aria-label="Filtrlar"
-            className={cx(btn.outline, 'relative h-12 px-4 shadow-soft', showFilters && 'ring-2 ring-emerald-500')}
+            className={cx(btn.outline, 'relative h-12 px-4 shadow-soft', showFilters && 'ring-2 ring-brand-500')}
           >
             <SlidersIcon className="h-5 w-5" /> <span className="hidden sm:inline">Filtrlar</span>
             {activeFilters > 0 && (
-              <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-emerald-600 px-1 text-[11px] font-extrabold text-white">
+              <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-brand-600 px-1 text-[11px] font-extrabold text-white">
                 {activeFilters}
               </span>
             )}
@@ -179,7 +179,7 @@ export default function ListPage({ route }) {
               id="sort"
               value={sort}
               onChange={(e) => changeSort(e.target.value)}
-              className="h-10 flex-1 rounded-2xl border border-line bg-surface px-3 text-sm font-semibold text-ink-2 outline-none focus:border-emerald-500 sm:flex-none"
+              className="h-10 flex-1 rounded-2xl border border-line bg-surface px-3 text-sm font-semibold text-ink-2 outline-none focus:border-brand-500 sm:flex-none"
             >
               {SORTS.map((s) => (
                 <option key={s.value} value={s.value}>
@@ -297,7 +297,7 @@ export default function ListPage({ route }) {
             <>
               <p className="mb-3 text-sm font-semibold text-ink-3">{visible.length} ta hashar topildi</p>
               {view === 'grid' ? (
-                <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {visible.map((h) => (
                     <li key={h.id}>
                       <HasharCard hashar={h} distance={h.distance} className="h-full" />
@@ -305,7 +305,7 @@ export default function ListPage({ route }) {
                   ))}
                 </ul>
               ) : (
-                <ul className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <ul className="stagger grid grid-cols-1 gap-3 lg:grid-cols-2">
                   {visible.map((h) => (
                     <li key={h.id}>
                       <HasharRow hashar={h} distance={h.distance} />

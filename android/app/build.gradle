@@ -72,6 +72,15 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+    // QR davomat skaneri: ML Kit shtrix-kod modeli APK ichida emas — Google Play xizmatlari orqali (unbundled).
+    // API bir xil; quyidagi exclude bilan birga APK ~20 MB kichrayadi (Workers statik fayl limiti 25 MiB).
+    implementation "com.google.android.gms:play-services-mlkit-barcode-scanning:18.3.1"
+}
+
+// @capacitor-mlkit/barcode-scanning bundled modelni (com.google.mlkit:barcode-scanning, 4 ABI uchun ~20 MB .so) olib keladi —
+// ilovaga kiritilmaydi, o'rniga yuqoridagi thin kutubxona ishlaydi.
+configurations.configureEach {
+    exclude group: 'com.google.mlkit', module: 'barcode-scanning'
 }
 
 apply from: 'capacitor.build.gradle'

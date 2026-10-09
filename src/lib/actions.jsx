@@ -1,15 +1,15 @@
 // Ilova darajasidagi amallar: kirishni talab qilish (AuthModal), emailni tasdiqlashni talab qilish
 // (EmailVerifyScreen), qo'shilish/chiqish, ulashish.
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import AuthModal from '../components/AuthModal.jsx';
-import EmailVerifyScreen from '../components/EmailVerifyScreen.jsx';
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useToast } from '../components/Toast.jsx';
 import { api, onEmailUnverified } from './api.js';
 import { onPasswordLogin, useAuth } from './auth.jsx';
 import { shareUrl } from './config.js';
 import { haptic, shareLink } from './native.js';
 import { getServerConfig, useServerConfig } from './serverConfig.js';
+import { refreshUnread } from './notifications.js';
 import { invalidate } from './store.js';
+import { IS_NATIVE } from './config.js';
 
 // "Emailni tasdiqlang" bosqichi shu brauzer sessiyasida o'zi bir marta ko'rsatilganmi (keyin — banner va amallar)
 const PROMPTED_KEY = 'hashar_verify_prompted';
@@ -25,6 +25,10 @@ function promptedOnce() {
 
 /** Email xizmati yoqilgan va foydalanuvchi emaili tasdiqlanmagan. */
 export const needsEmailVerify = (user) => Boolean(user) && user.email_verified === false && getServerConfig().email_enabled;
+
+// Kirish va email tasdiqlash oynalari kerak bo'lgandagina yuklanadi (asosiy bundle yengilroq)
+const AuthModal = lazy(() => import('../components/AuthModal.jsx'));
+const EmailVerifyScreen = lazy(() => import('../components/EmailVerifyScreen.jsx'));
 
 const ActionsContext = createContext(null);
 
@@ -90,6 +94,13 @@ export function ActionsProvider({ children }) {
     [requireAuth, promptVerify],
   );
 
+  // Mehmon uchun kirish oynasi kodi bo'sh vaqtda oldindan (birinchi "Qatnashish" bosilganda kutilmasin)
+  useEffect(() => {
+    if (!auth.ready || auth.user) return undefined;
+    const t = setTimeout(() => import('../components/AuthModal.jsx').catch(() => {}), 3500);
+    return () => clearTimeout(t);
+  }, [auth.ready, auth.user]);
+
   // Parol bilan kirgan, emaili tasdiqlanmagan foydalanuvchi — darhol "Emailni tasdiqlang"
   useEffect(
     () =>
@@ -124,6 +135,7 @@ export function ActionsProvider({ children }) {
     (id) => {
       invalidate('hashars', `hashar:${id}`, 'stats', 'me:', 'user:', 'leaderboard');
       auth.refresh().catch(() => {});
+      refreshUnread();
     },
     [auth],
   );
@@ -157,6 +169,11 @@ export function ActionsProvider({ children }) {
       try {
         const r = await api.leave(id);
         haptic('light');
+        // APK: shu hashar eslatmalari bekor qilinadi (qolganlari me:joined yangilanganda qayta sinxronlanadi)
+        if (IS_NATIVE)
+          import('../native/reminders.js')
+            .then((m) => m.cancelReminders(id))
+            .catch(() => {});
         toast('Siz hashardan chiqdingiz', 'info');
         refreshAfterChange(id);
         return r;
@@ -193,8 +210,10 @@ export function ActionsProvider({ children }) {
   return (
     <ActionsContext.Provider value={value}>
       {children}
-      {authReason && <AuthModal reason={authReason} onClose={() => finishAuth(false)} onSuccess={(u) => finishAuth(true, u)} />}
-      {verifyReason && <EmailVerifyScreen reason={verifyReason} onDone={finishVerify} />}
+      <Suspense fallback={null}>
+        {authReason && <AuthModal reason={authReason} onClose={() => finishAuth(false)} onSuccess={(u) => finishAuth(true, u)} />}
+        {verifyReason && <EmailVerifyScreen reason={verifyReason} onDone={finishVerify} />}
+      </Suspense>
     </ActionsContext.Provider>
   );
 }

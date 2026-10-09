@@ -1,9 +1,9 @@
-// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar.
+// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar / To'lovlar / Sozlamalar.
 // Alohida bundle (main.jsx da React.lazy) — oddiy foydalanuvchi uni yuklamaydi.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AuthModal from '../components/AuthModal.jsx';
 import { Logo } from '../components/Header.jsx';
-import { ArrowLeftIcon, LeafIcon, ShieldIcon, UsersIcon } from '../components/icons.jsx';
+import { ArrowLeftIcon, LeafIcon, SettingsIcon, ShieldIcon, UsersIcon, WalletIcon } from '../components/icons.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/auth.jsx';
@@ -12,12 +12,17 @@ import { closeAdmin } from '../lib/router.js';
 import { cx, formatPhone } from '../lib/utils.js';
 import HasharsTab from './HasharsTab.jsx';
 import OverviewTab from './OverviewTab.jsx';
+import PaymentsTab from './PaymentsTab.jsx';
+import SettingsTab from './SettingsTab.jsx';
 import UsersTab from './UsersTab.jsx';
 
+// short — telefon uchun qisqa yorliq (5 ta tab bir qatorga sig'adi, gorizontal aylantirish shart emas)
 const TABS = [
-  { id: 'overview', label: 'Umumiy', icon: ShieldIcon },
-  { id: 'users', label: 'Foydalanuvchilar', icon: UsersIcon },
-  { id: 'hashars', label: 'Hasharlar', icon: LeafIcon },
+  { id: 'overview', label: 'Umumiy', short: 'Umumiy', icon: ShieldIcon },
+  { id: 'users', label: 'Foydalanuvchilar', short: "A'zolar", icon: UsersIcon },
+  { id: 'hashars', label: 'Hasharlar', short: 'Hasharlar', icon: LeafIcon },
+  { id: 'payments', label: "To'lovlar", short: "To'lovlar", icon: WalletIcon },
+  { id: 'settings', label: 'Sozlamalar', short: 'Sozlama', icon: SettingsIcon },
 ];
 
 /** #admin/users → 'users' (noma'lum bo'lsa 'overview'). */
@@ -52,7 +57,7 @@ function AdminHeader({ user }) {
 function Gate({ user, onLogin, onSwitch }) {
   return (
     <div className="mx-auto mt-10 max-w-md rounded-3xl bg-white p-6 text-center shadow-sm ring-1 ring-slate-200/70 sm:p-8">
-      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-emerald-50 text-emerald-600">
+      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand-50 text-brand-600">
         <ShieldIcon className="h-8 w-8" />
       </span>
       <h1 className="mt-4 text-2xl font-extrabold text-slate-900">Admin panel</h1>
@@ -104,6 +109,26 @@ export default function AdminApp() {
     };
   }, []);
 
+  // Manzil qo'lda o'zgarsa (#admin/settings) — tab ham almashadi
+  useEffect(() => {
+    const onHash = () => setTab(tabFromHash());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  // Aktiv tab har doim ko'rinishda (tab qatori sig'masa — gorizontal suriladi; sahifa vertikal siljimaydi)
+  const tabsRef = useRef(null);
+  const isAdminUser = !!(user && user.is_admin);
+  useEffect(() => {
+    const strip = tabsRef.current;
+    const el = strip && strip.querySelector(`[data-tab="${tab}"]`);
+    if (!el || strip.scrollWidth <= strip.clientWidth) return;
+    const r = el.getBoundingClientRect();
+    const box = strip.getBoundingClientRect();
+    const left = strip.scrollLeft + r.left - box.left - (strip.clientWidth - r.width) / 2;
+    strip.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
+  }, [tab, isAdminUser]);
+
   // Tab manzilda saqlanadi (#admin/users) — sahifa yangilansa ham o'sha tab ochiladi
   const changeTab = (id) => {
     setTab(id);
@@ -115,7 +140,7 @@ export default function AdminApp() {
   let content;
   if (!auth.ready) {
     content = (
-      <div className="grid place-items-center py-24 text-emerald-600">
+      <div className="grid place-items-center py-24 text-brand-600">
         <Spinner className="h-8 w-8 border-[3px]" />
       </div>
     );
@@ -139,21 +164,26 @@ export default function AdminApp() {
             <p className="mt-0.5 text-sm text-slate-500">Foydalanuvchilar va hasharlarni boshqarish</p>
           </div>
         </div>
-        <div role="tablist" aria-label="Admin bo'limlari" className="-mx-4 mt-4 overflow-x-auto px-4">
-          <div className="inline-flex min-w-full gap-1 rounded-2xl bg-slate-200/60 p-1 sm:min-w-0">
+        {/* Telefonda (md dan kichik): 5 ustunli panel — ikonka ustida qisqa yorliq, hammasi ko'rinadi;
+            kattaroq ekranda — gorizontal "pill"lar (sig'masa aylantiriladi, aktiv tab ko'rinishga suriladi) */}
+        <div ref={tabsRef} role="tablist" aria-label="Admin bo'limlari" className="no-scrollbar -mx-4 mt-4 overflow-x-auto px-4">
+          <div className="grid grid-cols-5 gap-1 rounded-2xl bg-slate-200/60 p-1 md:inline-flex md:min-w-0">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 role="tab"
                 aria-selected={tab === t.id}
+                data-tab={t.id}
                 onClick={() => changeTab(t.id)}
                 className={cx(
-                  'inline-flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-bold transition sm:flex-none sm:px-5',
-                  tab === t.id ? 'bg-white text-emerald-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                  'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[11px] font-bold leading-tight transition md:flex-none md:flex-row md:gap-1.5 md:whitespace-nowrap md:px-5 md:py-2.5 md:text-sm',
+                  tab === t.id ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
                 )}
               >
-                <t.icon className="h-4 w-4 max-[400px]:hidden" /> {t.label}
+                <t.icon className="h-5 w-5 shrink-0 md:h-4 md:w-4" />
+                <span className="max-w-full truncate md:hidden">{t.short}</span>
+                <span className="hidden md:inline">{t.label}</span>
               </button>
             ))}
           </div>
@@ -171,6 +201,8 @@ export default function AdminApp() {
           )}
           {tab === 'users' && <UsersTab key={userQuery.key} meId={user.id} initialQuery={userQuery.q} />}
           {tab === 'hashars' && <HasharsTab />}
+          {tab === 'payments' && <PaymentsTab />}
+          {tab === 'settings' && <SettingsTab />}
         </div>
       </>
     );

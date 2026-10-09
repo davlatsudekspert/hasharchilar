@@ -6,10 +6,12 @@ import { storage, TOKEN_KEY } from './storage.js';
 
 /**
  * Mijoz versiyasi (worker/auth.js clientVersion) — eski APK'ni ajratish uchun.
- * Sarlavha emas, `?client=3` query: CORS preflight ro'yxatini o'zgartirmaydi, shuning uchun
+ * 3 — email tasdiqlash oynasi bor (v3); 4 — hashar e'lon qilish to'lovi bor (v4: narx > 0 bo'lsa server
+ * 4 dan eski mijozga hashar yaratishni bermaydi — "Ilovani yangilang").
+ * Sarlavha emas, `?client=4` query: CORS preflight ro'yxatini o'zgartirmaydi, shuning uchun
  * yangi APK eski (yoki orqaga qaytarilgan) worker bilan ham ishlaydi.
  */
-const CLIENT_VERSION = 3;
+const CLIENT_VERSION = 4;
 
 /**
  * HTTP status bilan xato (UI faqat `message` ni ko'rsatadi).
@@ -87,11 +89,23 @@ export async function request(path, { method = 'GET', json, form, signal, keepSe
   }
 
   let res;
-  try {
-    res = await fetch(url, { method, headers, body, signal });
-  } catch (err) {
-    if (err && err.name === 'AbortError') throw err;
-    throw new ApiError('Internet aloqasini tekshiring', 0);
+  // index.html birinchi sahifa ma'lumotini kirish skripti bilan parallel so'ragan bo'lsa — o'sha javob (bir marta)
+  const hp = typeof window !== 'undefined' ? window.__hp : null;
+  if (hp && method === 'GET' && body === undefined && !signal && hp.path === path && hp.tok === (token || '')) {
+    window.__hp = null;
+    try {
+      res = await hp.res;
+    } catch {
+      res = undefined;
+    }
+  }
+  if (!res) {
+    try {
+      res = await fetch(url, { method, headers, body, signal });
+    } catch (err) {
+      if (err && err.name === 'AbortError') throw err;
+      throw new ApiError('Internet aloqasini tekshiring', 0);
+    }
   }
 
   let data = null;
@@ -182,6 +196,24 @@ export const api = {
     request('/me/password', { method: 'POST', json: { current_password, new_password }, keepSession: true }),
   leaderboard: (period = 'all') => request(`/leaderboard${qs({ period })}`),
 
+  // Saqlanganlar (xatcho'p)
+  save: (id) => request(`/hashars/${id}/save`, { method: 'POST' }),
+  unsave: (id) => request(`/hashars/${id}/save`, { method: 'DELETE' }),
+  mySaves: () => request('/me/saves'),
+
+  // Bildirishnomalar
+  notifications: (before) => request(`/me/notifications${qs({ before })}`),
+  unreadCount: () => request('/me/notifications/unread-count'),
+  markRead: (body) => request('/me/notifications/read', { method: 'POST', json: body }),
+
+  // To'lov (hashar e'lon qilish narxi)
+  hasharPayment: (id) => request(`/hashars/${id}/payment`),
+
+  // QR davomat
+  checkinCode: (id) => request(`/hashars/${id}/checkin-code`),
+  attendance: (id) => request(`/hashars/${id}/checkins`),
+  checkin: (id, code) => request(`/hashars/${id}/checkin`, { method: 'POST', json: { code } }),
+
   // Geo (worker proksi orqali Nominatim)
   geoSearch: (q, signal) => request(`/geo/search${qs({ q })}`, { signal }),
   geoReverse: (lat, lng, signal) => request(`/geo/reverse${qs({ lat: lat.toFixed(5), lng: lng.toFixed(5) })}`, { signal }),
@@ -197,5 +229,9 @@ export const api = {
     hashars: (params) => request(`/admin/hashars${qs(params)}`),
     deleteHashar: (id) => request(`/admin/hashars/${id}`, { method: 'DELETE' }),
     deleteComment: (id) => request(`/admin/comments/${id}`, { method: 'DELETE' }),
+    payments: (params) => request(`/admin/payments${qs(params)}`),
+    markPaid: (id, body = {}) => request(`/admin/hashars/${id}/mark-paid`, { method: 'POST', json: body }),
+    settings: () => request('/admin/settings'),
+    saveSettings: (body) => request('/admin/settings', { method: 'POST', json: body }),
   },
 };

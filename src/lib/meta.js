@@ -16,9 +16,9 @@ export const CATEGORIES = [
     label: "Ko'kalam\u00adzorlashtirish",
     short: "Ko'kalam",
     text: "Daraxt va gul ko'chatlari ekish, sug'orish",
-    chip: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-400/15 dark:text-emerald-300',
-    tint: 'from-emerald-500 to-lime-500',
-    color: '#10b981',
+    chip: 'bg-green-100 text-green-800 dark:bg-green-400/15 dark:text-green-300',
+    tint: 'from-green-500 to-lime-500',
+    color: '#22c55e',
   },
   {
     id: 'repair',

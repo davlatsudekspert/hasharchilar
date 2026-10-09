@@ -31,11 +31,11 @@ export function ToastProvider({ children }) {
             className={`toast-in pointer-events-auto flex max-w-md items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold shadow-2xl ring-1 ${
               t.type === 'error'
                 ? 'bg-red-600 text-white ring-red-700'
-                : 'bg-slate-900/95 text-white ring-white/10 backdrop-blur dark:bg-emerald-950/95 dark:ring-emerald-400/20'
+                : 'bg-slate-900/95 text-white ring-white/10 backdrop-blur dark:bg-brand-950/95 dark:ring-brand-400/20'
             }`}
             onClick={() => dismiss(t.id)}
           >
-            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${t.type === 'error' ? 'bg-white/20' : t.type === 'info' ? 'bg-sky-500' : 'bg-emerald-500'}`}>
+            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-full ${t.type === 'error' ? 'bg-white/20' : t.type === 'info' ? 'bg-sky-500' : 'bg-brand-500'}`}>
               {t.type === 'error' ? (
                 <AlertIcon className="h-3.5 w-3.5" />
               ) : t.type === 'info' ? (

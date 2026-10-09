@@ -27,7 +27,7 @@ export default function LoginPage({ route }) {
           <h1 className="mt-10 text-4xl font-extrabold leading-tight">
             Mahallangiz sizni <span className="text-gradient">kutmoqda</span>
           </h1>
-          <p className="mt-3 text-emerald-50/85">Minglab qo'shnilar bilan birga shahrimizni toza va yashil qilamiz.</p>
+          <p className="mt-3 text-brand-50/85">Minglab qo'shnilar bilan birga shahrimizni toza va yashil qilamiz.</p>
           <ul className="mt-8 space-y-3">
             {PERKS.map((p) => (
               <li key={p} className="flex items-center gap-3 font-semibold">

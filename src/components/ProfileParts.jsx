@@ -46,7 +46,7 @@ export function ProfileHero({ person, stats, action, editable, onEditAvatar }) {
                 type="button"
                 onClick={onEditAvatar}
                 aria-label="Rasmni o'zgartirish"
-                className="absolute bottom-1 right-1 grid h-9 w-9 place-items-center rounded-full bg-emerald-600 text-white shadow-lg ring-4 ring-surface transition hover:bg-emerald-700"
+                className="absolute bottom-1 right-1 grid h-9 w-9 place-items-center rounded-full bg-brand-600 text-white shadow-lg ring-4 ring-surface transition hover:bg-brand-700"
               >
                 <CameraIcon className="h-4 w-4" />
               </button>
@@ -150,7 +150,7 @@ export function BadgesGrid({ stats }) {
                 </div>
               )}
               {b.earned && (
-                <span className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-emerald-500 text-white">
+                <span className="absolute right-3 top-3 grid h-5 w-5 place-items-center rounded-full bg-brand-500 text-white">
                   <CheckIcon className="h-3 w-3" strokeWidth={3.5} />
                 </span>
               )}
@@ -279,7 +279,7 @@ export function EditProfileModal({ onClose }) {
                 <CameraIcon className="h-4 w-4" /> Kamera
               </button>
             )}
-            <label className={cx(btn.soft, 'h-10 cursor-pointer px-3.5 text-sm has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-emerald-500')}>
+            <label className={cx(btn.soft, 'h-10 cursor-pointer px-3.5 text-sm has-[input:focus-visible]:ring-2 has-[input:focus-visible]:ring-brand-500')}>
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"

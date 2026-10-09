@@ -1,4 +1,5 @@
-// Xarita atributsiyasi — doim ko'rinadi (OpenFreeMap / OpenMapTiles / OpenStreetMap talabi).
+// Xarita atributsiyasi — doim ko'rinadi (OpenFreeMap / OpenMapTiles / OpenStreetMap talabi). Ranglar mavzu
+// o'zgaruvchilaridan (surface / ink-2): har bir aksent va tungi rejimga mos.
 import { cx } from '../../lib/utils.js';
 
 export default function MapAttribution({ className }) {
@@ -6,7 +7,7 @@ export default function MapAttribution({ className }) {
   return (
     <div
       className={cx(
-        'pointer-events-auto absolute bottom-1 right-1 z-[2] max-w-[calc(100%-8px)] truncate rounded-md bg-white/85 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-slate-700 backdrop-blur dark:bg-slate-900/80 dark:text-slate-300',
+        'pointer-events-auto absolute bottom-1 right-1 z-[2] max-w-[calc(100%-8px)] truncate rounded-md bg-surface/85 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-ink-2 backdrop-blur',
         className,
       )}
     >

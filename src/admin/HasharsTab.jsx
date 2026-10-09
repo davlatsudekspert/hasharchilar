@@ -9,12 +9,13 @@ import { btn, EmptyState, ErrorState, ItemChips, StatusBadge } from '../componen
 import { api } from '../lib/api.js';
 import { mediaUrl } from '../lib/config.js';
 import { cx, formatDateLong, formatDateTime, formatDay, formatPhone, osmLink, volunteersLabel } from '../lib/utils.js';
-import { ConfirmDialog, LoadMore, RowsSkeleton, SearchField, useDebounced, usePagedList } from './shared.jsx';
+import { Badge, ConfirmDialog, LoadMore, RowsSkeleton, SearchField, useDebounced, usePagedList } from './shared.jsx';
 
 const FILTERS = [
   { id: '', label: 'Barchasi' },
   { id: 'PENDING', label: 'Kutilmoqda' },
   { id: 'COMPLETED', label: 'Bajarildi' },
+  { id: 'unpaid', label: "To'lanmagan" },
 ];
 
 /** O'chirishni tasdiqlash matni. */
@@ -54,7 +55,7 @@ export function AdminHasharPreview({ hashar: h, onClose, onDelete }) {
       ) : before || after ? (
         <img src={before || after} alt="" className="aspect-[16/10] w-full rounded-2xl bg-slate-100 object-cover" />
       ) : (
-        <div className="grid aspect-[16/7] place-items-center rounded-2xl bg-emerald-50 text-emerald-300">
+        <div className="grid aspect-[16/7] place-items-center rounded-2xl bg-brand-50 text-brand-300">
           <LeafIcon className="h-12 w-12" />
         </div>
       )}
@@ -75,7 +76,7 @@ export function AdminHasharPreview({ hashar: h, onClose, onDelete }) {
           <PinIcon className="mt-0.5 h-5 w-5 shrink-0 text-slate-400" />
           <span>
             {h.address || "Manzil ko'rsatilmagan"}{' '}
-            <a href={osmLink(h.lat, h.lng)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-emerald-700 hover:underline">
+            <a href={osmLink(h.lat, h.lng)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-brand-700 hover:underline">
               xarita <ExternalIcon className="h-3.5 w-3.5" />
             </a>
           </span>
@@ -87,7 +88,7 @@ export function AdminHasharPreview({ hashar: h, onClose, onDelete }) {
             {h.creator?.phone && (
               <>
                 {' · '}
-                <a href={`tel:${h.creator.phone}`} className="font-semibold text-emerald-700 hover:underline">
+                <a href={`tel:${h.creator.phone}`} className="font-semibold text-brand-700 hover:underline">
                   {formatPhone(h.creator.phone)}
                 </a>
               </>
@@ -121,7 +122,8 @@ export default function HasharsTab() {
   const [status, setStatus] = useState('');
   const [query, setQuery] = useState('');
   const q = useDebounced(query.trim());
-  const list = usePagedList((p) => api.admin.hashars({ ...p, status, q }), [status, q]);
+  // "To'lanmagan" — to'lov holati filtri (payment=unpaid), qolganlari — hashar holati
+  const list = usePagedList((p) => api.admin.hashars({ ...p, ...(status === 'unpaid' ? { payment: 'unpaid' } : { status }), q }), [status, q]);
   const [preview, setPreview] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
@@ -157,6 +159,8 @@ export default function HasharsTab() {
                   <p className="line-clamp-1 font-bold text-slate-900">{h.title}</p>
                   <div className="mt-1 flex min-w-0 items-center gap-2">
                     <StatusBadge status={h.status} className="shrink-0 !px-2 !py-0.5" />
+                    {h.payment_status === 'unpaid' && <Badge tone="amber">To'lanmagan</Badge>}
+                    {h.payment_status === 'waived' && <Badge tone="sky">Bepul</Badge>}
                     <span className="truncate text-sm text-slate-500">{formatDateTime(h.date_time)}</span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-slate-500">
@@ -186,7 +190,7 @@ export default function HasharsTab() {
   return (
     <section aria-label="Hasharlar">
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div role="radiogroup" aria-label="Holat" className="grid shrink-0 grid-cols-3 gap-1 rounded-xl bg-slate-200/60 p-1">
+        <div role="radiogroup" aria-label="Holat" className="grid shrink-0 grid-cols-4 gap-1 rounded-xl bg-slate-200/60 p-1">
           {FILTERS.map((f) => (
             <button
               key={f.id || 'all'}
@@ -195,8 +199,8 @@ export default function HasharsTab() {
               aria-checked={status === f.id}
               onClick={() => setStatus(f.id)}
               className={cx(
-                'rounded-lg px-3 py-2 text-sm font-bold transition',
-                status === f.id ? 'bg-white text-emerald-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                'whitespace-nowrap rounded-lg px-2 py-2 text-[13px] font-bold transition sm:px-3 sm:text-sm',
+                status === f.id ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
               )}
             >
               {f.label}

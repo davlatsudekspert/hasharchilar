@@ -8,7 +8,7 @@ export default function NotFoundPage() {
     <div className="mx-auto flex max-w-lg flex-col items-center px-4 py-20 text-center">
       <div className="relative">
         <p className="font-display text-[120px] font-extrabold leading-none text-transparent [-webkit-text-stroke:2px_var(--c-line-strong)]">404</p>
-        <span className="absolute inset-0 m-auto grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-emerald-500 to-emerald-700 text-white shadow-glow">
+        <span className="absolute inset-0 m-auto grid h-20 w-20 place-items-center rounded-3xl bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-glow">
           <MapIcon className="h-10 w-10" />
         </span>
       </div>

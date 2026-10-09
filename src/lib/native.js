@@ -19,6 +19,8 @@ export async function initNative() {
       if (getRoute().name === 'home') App.exitApp();
       else goBack('/');
     });
+    // Ilova fondan qaytdi (to'lov sahifasidan qaytish, bildirishnomalar) — obunachilarga xabar
+    await App.addListener('resume', () => resumeSubs.forEach((fn) => fn()));
     // OS kamera paytida ilovani o'ldirgan bo'lsa — surat shu hodisa bilan qaytadi
     await App.addListener('appRestoredResult', (r) => {
       restorePhoto(r).catch(() => {});
@@ -27,6 +29,14 @@ export async function initNative() {
     console.warn('App listeners', err);
   }
   watchKeyboard();
+}
+
+// ---------------- Ilova fondan qaytishi ----------------
+const resumeSubs = new Set();
+/** APK fondan qaytganda chaqiriladi (saytda — visibilitychange ishlatiladi). Qaytadi — obunani bekor qilish. */
+export function onAppResume(fn) {
+  resumeSubs.add(fn);
+  return () => resumeSubs.delete(fn);
 }
 
 // ---------------- Klaviatura ----------------
@@ -63,11 +73,13 @@ export async function nativeBuild() {
   }
 }
 
-let lastDark = null;
-/** Status bar matni/foni joriy mavzuga mos. */
-export async function setNativeTheme(dark) {
-  if (!IS_NATIVE || lastDark === dark) return;
-  lastDark = dark;
+let lastTheme = '';
+/** Status bar matni/foni joriy mavzu va aksentga mos (`color` — sarlavha foni, aksent tusida). */
+export async function setNativeTheme(dark, color) {
+  const bg = color || (dark ? '#0e1a16' : '#ffffff');
+  const key = `${dark ? 1 : 0}${bg}`;
+  if (!IS_NATIVE || lastTheme === key) return;
+  lastTheme = key;
   try {
     await SystemBars.setStyle({ style: dark ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {});
   } catch {
@@ -76,7 +88,7 @@ export async function setNativeTheme(dark) {
   try {
     const { StatusBar, Style } = await import('@capacitor/status-bar');
     await StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(() => {});
-    await StatusBar.setBackgroundColor({ color: dark ? '#0e1a16' : '#ffffff' }).catch(() => {});
+    await StatusBar.setBackgroundColor({ color: /^#[0-9a-f]{6}$/i.test(bg) ? bg : dark ? '#0e1a16' : '#ffffff' }).catch(() => {});
   } catch {
     /* Android 15+ da fon rangi yo'q — e'tiborsiz */
   }
@@ -114,6 +126,16 @@ export async function haptic(kind = 'light') {
   }
 }
 
+// Ilova qulfi: tashqi oyna (kamera, ulashish) ochilayotganini bildiradi — qaytishda darhol qulflanmasin.
+// Qulf moduli faqat APK'da kerak — dinamik import (saytning chunk'lariga qo'shilmasin)
+export const markExternal = () =>
+  IS_NATIVE
+    ? import('../lock/lockStore.js').then(
+        (m) => m.markExternal(),
+        () => {},
+      )
+    : Promise.resolve();
+
 // ---------------- Ulashish ----------------
 /**
  * Havolani ulashadi. Natija: 'shared' | 'copied' | 'cancelled' | 'failed'.
@@ -123,6 +145,7 @@ export async function shareLink({ title, text, url }) {
   if (IS_NATIVE) {
     try {
       const { Share } = await import('@capacitor/share');
+      await markExternal();
       await Share.share({ title, text, url, dialogTitle: 'Ulashish' });
       return 'shared';
     } catch (err) {
@@ -190,6 +213,8 @@ export async function getCurrentPosition() {
       try {
         let perm = await Geolocation.checkPermissions();
         if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
+          // Tizim ruxsat oynasi ilovani pauza qiladi — qulf darhol ishlamasin
+          await markExternal();
           perm = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
         }
         if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') throw new GeoError('denied');
@@ -245,10 +270,12 @@ export async function takeNativePhoto(tag) {
   }
   let perm = await Camera.checkPermissions().catch(() => null);
   if (perm && perm.camera !== 'granted') {
+    await markExternal(); // ruxsat oynasi — qulf darhol ishlamasin
     perm = await Camera.requestPermissions({ permissions: ['camera'] }).catch(() => null);
     if (perm && perm.camera !== 'granted') throw new CameraError('denied', CAMERA_DENIED_MESSAGE);
   }
   if (tag) storage.setJSON(PENDING_KEY, { tag, hash: window.location.hash, at: Date.now() });
+  await markExternal();
   try {
     const res = await Camera.takePhoto({ quality: 85, targetWidth: 1600, targetHeight: 1600, correctOrientation: true, saveToGallery: false });
     return await photoFile(res);

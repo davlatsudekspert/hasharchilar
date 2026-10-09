@@ -1,12 +1,18 @@
 // Hashar sahifasi: rasm / Oldin-Keyin slayder, tafsilotlar, mini xarita, progress, ko'ngillilar, izohlar,
 // ulashish, kalendar, yo'l ko'rsatish; egasi uchun yakunlash / o'chirish.
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import BeforeAfterSlider from '../components/BeforeAfterSlider.jsx';
+import { checkinOpen, CheckinSheet, OwnerQrSheet } from '../components/Checkin.jsx';
 import Comments from '../components/Comments.jsx';
-import { JoinButton, Thumb } from '../components/HasharCard.jsx';
+import { isUnpaid, JoinButton, Thumb, UnpaidBadge } from '../components/HasharCard.jsx';
+import SaveButton from '../components/SaveButton.jsx';
 import {
   AlertIcon,
   ArrowLeftIcon,
+  AwardIcon,
+  QrIcon,
+  ScanIcon,
+  WalletIcon,
   CalendarIcon,
   CalendarPlusIcon,
   CheckIcon,
@@ -27,13 +33,20 @@ import PhotoInput from '../components/PhotoInput.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { Avatar, AvatarStack, btn, CategoryChip, EmptyState, ErrorState, ItemChips, Link, Progress, Spinner, StatusBadge } from '../components/ui.jsx';
 import { useActions } from '../lib/actions.jsx';
+import { useAuth } from '../lib/auth.jsx';
+import { formatSom } from '../lib/payments.js';
+import { useServerConfig } from '../lib/serverConfig.js';
+import { useInView } from '../lib/useInView.js';
 import { api } from '../lib/api.js';
 import { IS_NATIVE, mediaUrl } from '../lib/config.js';
 import { downloadIcs, googleCalendarUrl, googleDirections, yandexDirections } from '../lib/meta.js';
-import { haptic, hideSplash, onRestoredPhoto, peekRestoredPhoto } from '../lib/native.js';
+import { haptic, hideSplash, markExternal, onRestoredPhoto, peekRestoredPhoto } from '../lib/native.js';
 import { goBack, navigate } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { invalidate, peek, useApi } from '../lib/store.js';
 import { countdown, cx, formatDateLong, formatDay, formatPhone, isOverdue, osmLink, statusOf, timeAgo } from '../lib/utils.js';
+
+const ShareCardModal = lazy(() => import('../components/ShareCard.jsx'));
 
 function Info({ icon: Icon, label, children }) {
   return (
@@ -88,14 +101,24 @@ export default function HasharPage({ route }) {
   const toast = useToast();
   const actions = useActions();
   const seed = (peek('hashars:all') || []).find((x) => x.id === id) || null;
-  const d = useApi(`hashar:${id}`, () => api.getHashar(id));
+  const d = useApi(...Q.hashar(id));
   const [mode, setMode] = useState(null); // null | 'complete' | 'delete'
   const [afterPhoto, setAfterPhoto] = useState(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState('');
   const [showAllVolunteers, setShowAllVolunteers] = useState(false);
+  const [sheet, setSheet] = useState(null); // null | 'qr' | 'checkin' | 'card'
   const isDesktop = useIsDesktop();
+  const { user } = useAuth();
+  const { hashar_fee: fee, loaded: cfgLoaded } = useServerConfig();
+  // Narx 0 ga tushgan (admin sozlamasi): to'lanmagan hashar egasi uni bepul e'lon qiladi (to'lov sahifasi ochilganda
+  // server 'waived' qiladi) — "0 so'm to'lang" ko'rsatilmaydi
+  const freeNow = cfgLoaded && !(fee > 0);
+  // Mini xarita (MapLibre ~280 KB gzip) — faqat ekranga yaqinlashganda yuklanadi
+  const [mapBoxRef, mapNear] = useInView({ margin: '250px' });
+  const [asideMapRef, asideMapNear] = useInView({ margin: '100px' });
+  const checkinParam = route.query.checkin || '';
 
   useEffect(() => {
     if (!d.loading) hideSplash();
@@ -116,6 +139,19 @@ export default function HasharPage({ route }) {
   }, [gone]);
 
   const h = gone ? null : d.data || seed;
+
+  // To'lovdan qaytish (?tolov=1) — egasi to'lov holati sahifasiga
+  const ownerUnpaid = !!h && h.is_owner && isUnpaid(h);
+  useEffect(() => {
+    if (route.query.tolov && h && h.is_owner) navigate(`/tolov/${id}`, { replace: true });
+  }, [route.query.tolov, h, id]);
+  // QR havolasi (?checkin=kod): qo'shilgan ko'ngilli uchun tasdiqlash oynasi
+  const autoCheckin = useRef(false);
+  useEffect(() => {
+    if (autoCheckin.current || !checkinParam || !h || h.is_owner || h.status === 'COMPLETED') return;
+    autoCheckin.current = true;
+    setSheet('checkin');
+  }, [checkinParam, h]);
 
   if (!h && d.loading) return <Skeleton />;
   if (!h) {
@@ -197,58 +233,140 @@ export default function HasharPage({ route }) {
 
   const addToCalendar = () => {
     haptic('light');
-    if (IS_NATIVE) window.open(googleCalendarUrl(h), '_blank', 'noopener');
+    if (IS_NATIVE) {
+      markExternal();
+      window.open(googleCalendarUrl(h), '_blank', 'noopener');
+    }
     else {
       downloadIcs(h);
       toast('Kalendar fayli (.ics) yuklab olindi');
     }
   };
 
+  const canQr = h.is_owner && !done && !ownerUnpaid;
+  const canCheckin = !h.is_owner && h.joined && !done && !h.checked_in_at && checkinOpen(h);
+  const canCard = done && (h.joined || h.is_owner);
+
+  const qrButton = canQr && (
+    <button type="button" onClick={() => setSheet('qr')} className={cx(btn.soft, 'h-11 w-full text-sm')} data-testid="open-qr">
+      <QrIcon className="h-5 w-5" /> Davomat QR
+    </button>
+  );
+  const checkinButton = canCheckin && (
+    <button type="button" onClick={() => setSheet('checkin')} className={cx(btn.soft, 'h-11 w-full text-sm')} data-testid="open-checkin">
+      <ScanIcon className="h-5 w-5" /> Davomatni tasdiqlash
+    </button>
+  );
+  const checkedBadge = h.checked_in_at && !h.is_owner && (
+    <p className="flex items-center justify-center gap-2 rounded-2xl bg-brand-soft px-3 py-2.5 text-sm font-bold text-brand ring-1 ring-brand-line" data-testid="checked-in">
+      <CheckIcon className="h-4 w-4" strokeWidth={3} /> Davomat tasdiqlangan
+    </p>
+  );
+  const cardButton = canCard && (
+    <button type="button" onClick={() => setSheet('card')} className={cx(btn.cta, 'h-12 w-full')} data-testid="open-share-card">
+      <AwardIcon className="h-5 w-5" /> {h.is_owner ? 'Tashkilotchi kartasi' : 'Sertifikatni olish'}
+    </button>
+  );
+
   // ---- Asosiy harakat paneli ----
   const primaryActions = (
     <div className="space-y-2.5">
-      {h.is_owner && !done ? (
+      {ownerUnpaid ? (
         <>
-          <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 w-full')}>
-            <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash ("Keyin" rasmi)
+          <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-12 w-full')} data-testid="pay-button">
+            <WalletIcon className="h-5 w-5" /> {freeNow ? "Bepul e'lon qilish" : "To'lash va e'lon qilish"}
           </button>
           <button type="button" onClick={() => setMode('delete')} className={cx(btn.dangerSoft, 'h-11 w-full text-sm')}>
             <TrashIcon className="h-4 w-4" /> Hasharni o'chirish
           </button>
         </>
-      ) : h.joined && !done && !past ? (
-        <div className="flex gap-2">
-          <JoinButton hashar={h} size="lg" className="flex-1" />
-          <button type="button" disabled={actions.busyId === h.id} onClick={doLeave} className={cx(btn.outline, 'h-12 px-4')}>
-            {actions.busyId === h.id ? <Spinner /> : <LogOutIcon className="h-5 w-5" />} Chiqish
+      ) : h.is_owner && !done ? (
+        <>
+          <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 w-full')}>
+            <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash ("Keyin" rasmi)
           </button>
-        </div>
+          {qrButton}
+          <button type="button" onClick={() => setMode('delete')} className={cx(btn.dangerSoft, 'h-11 w-full text-sm')}>
+            <TrashIcon className="h-4 w-4" /> Hasharni o'chirish
+          </button>
+        </>
+      ) : h.joined && !done && !past ? (
+        <>
+          <div className="flex gap-2">
+            <JoinButton hashar={h} size="lg" className="flex-1" />
+            <button type="button" disabled={actions.busyId === h.id} onClick={doLeave} className={cx(btn.outline, 'h-12 px-4')}>
+              {actions.busyId === h.id ? <Spinner /> : <LogOutIcon className="h-5 w-5" />} Chiqish
+            </button>
+          </div>
+          {checkinButton}
+          {checkedBadge}
+        </>
       ) : (
-        <JoinButton hashar={h} size="lg" className="w-full" onJoined={applyJoin} />
+        <>
+          <JoinButton hashar={h} size="lg" className="w-full" onJoined={applyJoin} />
+          {checkinButton}
+          {checkedBadge}
+          {cardButton}
+        </>
       )}
     </div>
   );
 
   // Mobil pastki panel uchun ixcham variant
-  const mobileActions =
-    h.is_owner && !done ? (
-      <div className="flex gap-2">
-        <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 flex-1')}>
-          <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash
+  const mobileActions = ownerUnpaid ? (
+    <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-12 w-full')}>
+      <WalletIcon className="h-5 w-5" /> {freeNow ? "Bepul e'lon qilish" : fee > 0 ? `To'lash · ${formatSom(fee)}` : "To'lash"}
+    </button>
+  ) : h.is_owner && !done ? (
+    <div className="flex gap-2">
+      <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 flex-1')}>
+        <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash
+      </button>
+      {canQr && (
+        <button type="button" onClick={() => setSheet('qr')} aria-label="Davomat QR" className={cx(btn.soft, 'h-12 w-12 p-0')}>
+          <QrIcon className="h-5 w-5" />
         </button>
-        <button type="button" onClick={() => setMode('delete')} aria-label="Hasharni o'chirish" className={cx(btn.dangerSoft, 'h-12 w-12 p-0')}>
-          <TrashIcon className="h-5 w-5" />
+      )}
+      <button type="button" onClick={() => setMode('delete')} aria-label="Hasharni o'chirish" className={cx(btn.dangerSoft, 'h-12 w-12 p-0')}>
+        <TrashIcon className="h-5 w-5" />
+      </button>
+    </div>
+  ) : h.joined && !done && !past ? (
+    <div className="flex gap-2">
+      {canCheckin ? (
+        <button type="button" onClick={() => setSheet('checkin')} className={cx(btn.cta, 'h-12 flex-1 px-3')}>
+          <ScanIcon className="h-5 w-5" /> Davomat
         </button>
-      </div>
-    ) : (
-      primaryActions
-    );
+      ) : checkedBadge ? (
+        // Mobil: davomatdan o'tgani pastki panelda ham ko'rinsin
+        <p className="flex h-12 flex-1 items-center justify-center gap-2 rounded-2xl bg-brand-soft px-3 text-sm font-bold text-brand ring-1 ring-brand-line" data-testid="checked-in-mobile">
+          <CheckIcon className="h-4 w-4" strokeWidth={3} /> Davomat tasdiqlangan
+        </p>
+      ) : (
+        <JoinButton hashar={h} size="lg" className="flex-1" />
+      )}
+      <button type="button" disabled={actions.busyId === h.id} onClick={doLeave} aria-label="Hashardan chiqish" className={cx(btn.outline, 'h-12 w-12 p-0')}>
+        {actions.busyId === h.id ? <Spinner /> : <LogOutIcon className="h-5 w-5" />}
+      </button>
+    </div>
+  ) : canCheckin ? (
+    <button type="button" onClick={() => setSheet('checkin')} className={cx(btn.cta, 'h-12 w-full')}>
+      <ScanIcon className="h-5 w-5" /> Davomatni tasdiqlash
+    </button>
+  ) : canCard ? (
+    <button type="button" onClick={() => setSheet('card')} className={cx(btn.cta, 'h-12 w-full')}>
+      <AwardIcon className="h-5 w-5" /> {h.is_owner ? 'Tashkilotchi kartasi' : 'Sertifikatni olish'}
+    </button>
+  ) : (
+    <JoinButton hashar={h} size="lg" className="w-full" onJoined={applyJoin} />
+  );
 
   const quickLinks = (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-4 gap-2">
       <button type="button" onClick={() => actions.share(h)} className="flex flex-col items-center gap-1.5 rounded-2xl bg-surface-2 py-3 text-xs font-bold text-ink-2 ring-1 ring-line transition hover:text-brand active:scale-95">
         <ShareIcon className="h-5 w-5" /> Ulashish
       </button>
+      <SaveButton hashar={h} variant="button" />
       <button
         type="button"
         onClick={addToCalendar}
@@ -290,11 +408,33 @@ export default function HasharPage({ route }) {
         </button>
       </div>
 
+      {ownerUnpaid && (
+        <div className="fade-up mb-5 flex flex-col gap-3 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200 sm:flex-row sm:items-center sm:p-5 dark:from-amber-400/10 dark:to-orange-400/5 dark:ring-amber-400/25" data-testid="unpaid-banner">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-400 text-amber-950 shadow-cta">
+            <WalletIcon className="h-6 w-6" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-extrabold text-amber-950 dark:text-amber-100">Hasharingiz hali e'lon qilinmagan</p>
+            <p className="mt-0.5 text-sm text-amber-900/80 dark:text-amber-200/80">
+              {freeNow
+                ? "E'lon endi bepul — bir bosishda uni xaritada va ro'yxatda hammaga ko'rinadigan qiling."
+                : `To'lovdan so'ng${fee > 0 ? ` (${formatSom(fee)})` : ''} u xaritada va ro'yxatda hammaga ko'rinadi. Hozircha uni faqat siz ko'rasiz.`}
+            </p>
+          </div>
+          <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-11 shrink-0 px-5')}>
+            <WalletIcon className="h-4 w-4" /> {freeNow ? "Bepul e'lon qilish" : "To'lash"}
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         {/* ---------- Asosiy ustun ---------- */}
         <div className="min-w-0 space-y-6">
           {/* Media */}
           <div className="relative">
+            <div className="absolute bottom-3 right-3 z-[3]">
+              <SaveButton hashar={h} variant="overlay" className="h-11 w-11 shadow-lg" />
+            </div>
             {done && before && after ? (
               <BeforeAfterSlider before={before} after={after} alt={h.title} aspect="aspect-[16/10] sm:aspect-[16/9]" />
             ) : (
@@ -319,13 +459,22 @@ export default function HasharPage({ route }) {
                   <ClockIcon className="h-3.5 w-3.5" /> {left}
                 </span>
               )}
+              {ownerUnpaid && <UnpaidBadge />}
+              {h.is_owner && h.payment_status === 'paid' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-1 text-xs font-bold text-brand-800 dark:bg-brand-400/15 dark:text-brand-300">
+                  <WalletIcon className="h-3.5 w-3.5" /> To'langan
+                </span>
+              )}
+              {h.is_owner && h.payment_status === 'waived' && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 dark:bg-sky-400/15 dark:text-sky-300">Bepul e'lon</span>
+              )}
               {h.is_owner ? (
                 <span className="rounded-full bg-surface-2 px-2.5 py-1 text-xs font-bold text-ink-2 ring-1 ring-line">Siz tashkilotchisiz</span>
               ) : (
                 h.joined &&
                 !done &&
                 !past && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-600 px-2.5 py-1 text-xs font-bold text-white">
                     <CheckIcon className="h-3 w-3" strokeWidth={3} /> Siz qatnashasiz
                   </span>
                 )
@@ -384,8 +533,8 @@ export default function HasharPage({ route }) {
           )}
 
           {/* Mobil: xarita */}
-          <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:hidden">
-            {!isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-52" /> : <div className="h-52" />}
+          <section ref={mapBoxRef} className="overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:hidden">
+            {!isDesktop && mapNear ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-52" /> : <div className="skeleton h-52" />}
             <div className="flex gap-2 p-3">
               <a href={googleDirections(h.lat, h.lng)} target="_blank" rel="noopener noreferrer" className={cx(btn.soft, 'h-11 flex-1 text-sm')}>
                 <NavigationIcon className="h-4 w-4" /> Google
@@ -435,8 +584,8 @@ export default function HasharPage({ route }) {
             )}
           </div>
 
-          <div className="hidden overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:block">
-            {isDesktop ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-56" /> : <div className="h-56" />}
+          <div ref={asideMapRef} className="hidden overflow-hidden rounded-3xl border border-line bg-surface shadow-soft lg:block">
+            {isDesktop && asideMapNear ? <MiniMap lat={h.lat} lng={h.lng} status={statusOf(h)} className="h-56" /> : <div className="skeleton h-56" />}
           </div>
 
           {/* Tashkilotchi */}
@@ -465,7 +614,10 @@ export default function HasharPage({ route }) {
           {/* Ko'ngillilar */}
           <div className="rounded-3xl border border-line bg-surface p-5 shadow-soft">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-ink-3">Ko'ngillilar{volunteers ? ` · ${volunteers.length}` : ''}</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-ink-3">
+                Ko'ngillilar{volunteers ? ` · ${volunteers.length}` : ''}
+                {h.is_owner && h.checked_in_count > 0 ? ` · ${h.checked_in_count} keldi` : ''}
+              </p>
               {volunteers && volunteers.length > 6 && (
                 <button type="button" onClick={() => setShowAllVolunteers((v) => !v)} className="text-xs font-bold text-brand hover:underline">
                   {showAllVolunteers ? 'Yig\'ish' : 'Barchasi'}
@@ -516,6 +668,24 @@ export default function HasharPage({ route }) {
           </button>
         </div>
       </div>
+
+      {sheet === 'qr' && <OwnerQrSheet hashar={h} onClose={() => setSheet(null)} />}
+      {sheet === 'checkin' && (
+        <CheckinSheet
+          hashar={h}
+          initialCode={h.joined ? checkinParam : ''}
+          onClose={() => {
+            setSheet(null);
+            if (checkinParam) navigate(`/hashar/${h.id}`, { replace: true });
+          }}
+          onDone={(r) => d.mutate((x) => (x ? { ...x, checked_in_at: r.checked_in_at } : x))}
+        />
+      )}
+      {sheet === 'card' && (
+        <Suspense fallback={null}>
+          <ShareCardModal hashar={h} user={user} onClose={() => setSheet(null)} />
+        </Suspense>
+      )}
 
       {/* Yakunlash */}
       {mode === 'complete' && (

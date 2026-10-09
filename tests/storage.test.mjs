@@ -431,6 +431,7 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
   let server;
   const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
   // Eski sxemalarga yozilgan namunalar: yangi migratsiyalar shu ma'lumot ustida sinaladi
+  const seedV4 = readFileSync(join(ROOT, 'tests/fixtures/seed-v4.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
   const seedV3 = readFileSync(join(ROOT, 'tests/fixtures/seed-v3.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3;
   const seedV2 = readFileSync(join(ROOT, 'tests/fixtures/seed-v2.sql'), 'utf8') + EXTRA_ROWS;
   const files = MIGRATION_FILES;
@@ -448,12 +449,14 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
   test("0001 dan keyin namuna ma'lumot → qolgan migratsiyalar birma-bir", async () => {
     // Har bir namuna u qo'llanadigan har bir bosqichdan boshlab sinaladi
     const migratedWithData = new Set();
-    // seed-v2.sql — faqat 0003 dan oldingi, seed-v3.sql — 0004 dan oldingi bosqichlarda
-    // (keyin yangi jadvallar bo'sh qoladi)
+    // seed-v2.sql — faqat 0003 dan oldingi, seed-v3.sql — 0004 dan oldingi, seed-v4.sql — 0005 dan oldingi
+    // bosqichlarda (keyin yangi jadvallar bo'sh qoladi)
     const v2Max = files.indexOf('0003_v3.sql');
     const v3Max = files.indexOf('0004_email.sql');
+    const v4Max = files.indexOf('0005_v4.sql');
     for (const [label, sql, maxK] of [
       ['seed.sql', seed, files.length],
+      ['seed-v4.sql', seedV4, v4Max],
       ['seed-v3.sql', seedV3, v3Max],
       ['seed-v2.sql', seedV2, v2Max],
     ]) {
@@ -550,6 +553,81 @@ UPDATE users SET email = '   ' WHERE id = 3;`;
     assert.match(badPurpose.error, /CHECK constraint failed/);
     assert.match(noHash.error, /NOT NULL constraint failed/);
     assert.deepEqual(idx.rows.map((x) => x.name), ['idx_email_otps_lookup', 'idx_email_otps_user', 'idx_users_email']);
+  });
+
+  test("0005_v4: mavjud hasharlar to'langan, davomat bo'sh; to'lovlar / sozlamalar / saqlanganlar / bildirishnomalar ishlaydi", async () => {
+    const at = files.indexOf('0005_v4.sql');
+    assert.ok(at > 0);
+    const r = await upgrade(server, {
+      name: 'v4-upgrade',
+      before: at,
+      seed: seedV4,
+      checks: [
+        'SELECT payment_status, COUNT(*) AS n FROM hashars GROUP BY payment_status',
+        'SELECT COUNT(*) AS n FROM hashars',
+        'SELECT COUNT(*) AS n FROM volunteers WHERE checked_in_at IS NOT NULL',
+        "UPDATE hashars SET payment_status = 'yomon' WHERE id = 1",
+        "UPDATE hashars SET payment_status = 'unpaid' WHERE id = 1",
+        "INSERT INTO hashars (creator_id, title, lat, lng, date_time) VALUES (1, 'Yangi hashar', 41.3, 69.2, '2027-01-01T09:00') RETURNING payment_status",
+        "UPDATE volunteers SET checked_in_at = datetime('now') WHERE hashar_id = 4 AND user_id = 1",
+        `INSERT INTO payments (hashar_id, user_id, provider, amount, state, provider_tx_id, provider_time, create_time)
+           VALUES (1, 1, 'payme', 500000, 1, 'tx-1', 1000, 2000) RETURNING id, perform_time, cancel_time, reason, note, created_at IS NOT NULL AS has_created`,
+        "INSERT INTO payments (hashar_id, provider, amount, state, provider_tx_id) VALUES (1, 'payme', 500000, 1, 'tx-1')",
+        "INSERT INTO payments (hashar_id, provider, amount, state, provider_tx_id) VALUES (1, 'click', 500000, 0, 'tx-1') RETURNING id",
+        "INSERT INTO payments (hashar_id, provider, amount, state) VALUES (1, 'manual', 500000, 1), (1, 'manual', 500000, 1) RETURNING id",
+        "INSERT INTO payments (hashar_id, provider, amount, state) VALUES (1, 'paypal', 500000, 1)",
+        "INSERT INTO payments (hashar_id, provider, amount, state) VALUES (1, 'manual', -1, 1)",
+        "INSERT INTO payments (hashar_id, provider, amount, state) VALUES (999, 'manual', 1, 1) RETURNING id",
+        "INSERT INTO settings (key, value) VALUES ('hashar_fee', '5000') RETURNING key",
+        "INSERT INTO settings (key, value) VALUES ('hashar_fee', '7000')",
+        "INSERT INTO saves (user_id, hashar_id) VALUES (2, 1) RETURNING created_at IS NOT NULL AS ok",
+        'INSERT INTO saves (user_id, hashar_id) VALUES (2, 1)',
+        'INSERT INTO saves (user_id, hashar_id) VALUES (2, 999)',
+        "INSERT INTO notifications (user_id, type, hashar_id, actor_id, data) VALUES (1, 'join', 1, 2, '{\"title\":\"x\"}') RETURNING id, read_at",
+        "INSERT INTO notifications (user_id, type, data) VALUES (1, 'join', 'json emas')",
+        "INSERT INTO notifications (user_id, type) VALUES (1, 'published') RETURNING data",
+        'DELETE FROM saves WHERE hashar_id = 1',
+        'DELETE FROM notifications WHERE hashar_id = 1',
+        'DELETE FROM comments WHERE hashar_id = 1',
+        'DELETE FROM hashar_media WHERE hashar_id = 1',
+        'DELETE FROM volunteers WHERE hashar_id = 1',
+        'DELETE FROM hashars WHERE id = 1',
+        'SELECT COUNT(*) AS n FROM payments WHERE hashar_id = 1',
+        "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('payments', 'saves', 'notifications', 'hashars') AND name LIKE 'idx_%' ORDER BY name",
+      ],
+    });
+    assert.ok(!r.seedError, r.seedError);
+    assert.deepEqual(r.steps, files.slice(at).map((name) => ({ name, ok: true })));
+    const [statuses, total, checked, badStatus, unpaid, newRow, checkin, pay, dupTx, otherProvider, manualNulls, badProvider, negative,
+      noFk, fee, dupFee, save, dupSave, saveFk, notif, badJson, defData, , , , , , delHashar, paymentsKept, idx] = r.checks;
+    assert.deepEqual(statuses.rows, [{ payment_status: 'paid', n: total.rows[0].n }], "mavjud hasharlar — 'paid'");
+    assert.equal(checked.rows[0].n, 0);
+    assert.match(badStatus.error, /CHECK constraint failed/);
+    assert.ok(!unpaid.error, unpaid.error);
+    assert.deepEqual(newRow.rows, [{ payment_status: 'paid' }], "DEFAULT 'paid' (yangi hasharni kod 'unpaid' bilan yozadi)");
+    assert.ok(!checkin.error, checkin.error);
+    assert.deepEqual(pay.rows, [{ id: 1, perform_time: null, cancel_time: null, reason: null, note: null, has_created: 1 }]);
+    assert.match(dupTx.error, /UNIQUE constraint failed: payments\.provider, payments\.provider_tx_id/);
+    assert.equal(otherProvider.rows.length, 1, 'boshqa provayderda shu tx id mumkin');
+    assert.equal(manualNulls.rows.length, 2, 'provider_tx_id NULL lar cheklanmaydi');
+    assert.match(badProvider.error, /CHECK constraint failed/);
+    assert.match(negative.error, /CHECK constraint failed/);
+    assert.equal(noFk.rows.length, 1, "payments da tashqi kalit yo'q (tarix saqlanadi)");
+    assert.deepEqual(fee.rows, [{ key: 'hashar_fee' }]);
+    assert.match(dupFee.error, /UNIQUE constraint failed: settings\.key/);
+    assert.deepEqual(save.rows, [{ ok: 1 }]);
+    assert.match(dupSave.error, /UNIQUE constraint failed/);
+    assert.match(saveFk.error, /FOREIGN KEY constraint failed/);
+    assert.equal(notif.rows[0].read_at, null);
+    assert.match(badJson.error, /CHECK constraint failed/);
+    assert.deepEqual(defData.rows, [{ data: '{}' }]);
+    assert.ok(!delHashar.error, delHashar.error);
+    assert.equal(paymentsKept.rows[0].n, 4, "hashar o'chsa ham to'lovlar qoladi");
+    assert.deepEqual(idx.rows.map((x) => x.name), [
+      'idx_hashars_creator', 'idx_hashars_status_date', 'idx_hashars_unpaid',
+      'idx_notifications_actor', 'idx_notifications_hashar', 'idx_notifications_unread', 'idx_notifications_user',
+      'idx_payments_hashar', 'idx_payments_statement', 'idx_saves_hashar', 'idx_saves_user_created',
+    ]);
   });
 
   test("tekshiruvning o'zi: to'la bazada yiqiladigan migratsiya ushlanadi, ma'lumot buzilmaydi", async () => {

@@ -58,7 +58,7 @@ const TOO_LARGE = 'Rasm hajmi 5 MB dan oshmasligi kerak';
  * So'rov tanasini oqim sifatida o'qiydi; `max` baytdan oshsa 413.
  * Content-Length bo'lmasa (chunked) ham xotirada ko'pi bilan `max` bayt yig'iladi.
  */
-async function readBodyLimited(req, max) {
+export async function readBodyLimited(req, max) {
   if (!req.body) return new Uint8Array(0);
   const reader = req.body.getReader();
   const chunks = [];

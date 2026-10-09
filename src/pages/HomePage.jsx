@@ -23,13 +23,14 @@ import {
   ZapIcon,
 } from '../components/icons.jsx';
 import { Avatar, btn, CardSkeleton, CategoryChip, EmptyState, Link, SectionHeader } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { IS_NATIVE, mediaUrl } from '../lib/config.js';
 import { CATEGORIES } from '../lib/meta.js';
 import { hideSplash } from '../lib/native.js';
-import { navigate } from '../lib/router.js';
+import { hasNavigated, navigate, navWasPop } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
-import { cx, formatDay, isOverdue, sortHashars } from '../lib/utils.js';
+import { useInView } from '../lib/useInView.js';
+import { cx, formatDay, isOverdue } from '../lib/utils.js';
 
 function useCountUp(target, ms = 900) {
   const [v, setV] = useState(0);
@@ -52,9 +53,9 @@ function HeroStat({ value, label, icon: Icon }) {
   const n = useCountUp(value);
   return (
     <div className="rounded-2xl bg-white/[0.08] px-2 py-3 text-center ring-1 ring-white/15 backdrop-blur-sm sm:rounded-3xl sm:p-4 sm:text-left">
-      <Icon className="hidden h-5 w-5 text-emerald-200 sm:block" />
+      <Icon className="hidden h-5 w-5 text-brand-200 sm:block" />
       <p className="font-display text-2xl font-extrabold tabular text-white sm:mt-2 sm:text-3xl">{value == null ? '—' : n}</p>
-      <p className="truncate text-[11px] font-medium text-emerald-100/80 sm:text-[13px]">{label}</p>
+      <p className="truncate text-[11px] font-medium text-brand-100/80 sm:text-[13px]">{label}</p>
     </div>
   );
 }
@@ -64,7 +65,7 @@ function HeroVisual({ next }) {
   const h = next || { id: 0, title: "Ko'cha bo'yiga 50 ta ko'chat ekish", category: 'greening', status: 'PENDING', address: 'Yunusobod tumani' };
   return (
     <div className="relative mx-auto h-[440px] w-full max-w-[460px]" aria-hidden="true">
-      <div className="absolute inset-6 rounded-[40px] bg-emerald-300/20 blur-3xl" />
+      <div className="absolute inset-6 rounded-[40px] bg-brand-300/20 blur-3xl" />
       {/* Asosiy karta */}
       <div className="float-slow absolute left-6 top-4 w-[300px] overflow-hidden rounded-[28px] bg-white shadow-2xl ring-1 ring-black/5 dark:bg-slate-900">
         <div className="relative h-40">
@@ -88,7 +89,7 @@ function HeroVisual({ next }) {
       </div>
       {/* Suzuvchi chiplar */}
       <div className="absolute right-0 top-24 flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-xl ring-1 ring-black/5 dark:bg-slate-900" style={{ animation: 'float 7s ease-in-out infinite 1s' }}>
-        <span className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-100 text-emerald-700">
+        <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-100 text-brand-700">
           <UsersIcon className="h-5 w-5" />
         </span>
         <div>
@@ -105,8 +106,8 @@ function HeroVisual({ next }) {
           <p className="text-xs text-slate-500">yangi nishon</p>
         </div>
       </div>
-      <div className="absolute bottom-24 left-0 flex items-center gap-2 rounded-full bg-emerald-950/80 px-4 py-2 text-sm font-bold text-white shadow-xl ring-1 ring-white/10 backdrop-blur">
-        <CheckCircleIcon className="h-4 w-4 text-emerald-300" /> Hashar yakunlandi
+      <div className="absolute bottom-24 left-0 flex items-center gap-2 rounded-full bg-brand-950/80 px-4 py-2 text-sm font-bold text-white shadow-xl ring-1 ring-white/10 backdrop-blur">
+        <CheckCircleIcon className="h-4 w-4 text-brand-300" /> Hashar yakunlandi
       </div>
     </div>
   );
@@ -125,7 +126,7 @@ function Carousel({ children, label }) {
   const scroll = (dir) => ref.current?.scrollBy({ left: dir * Math.min(660, ref.current.clientWidth * 0.85), behavior: 'smooth' });
   return (
     <div className="relative">
-      <div ref={ref} className="no-scrollbar -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-px-4 px-4 pb-4 pt-1" role="list" aria-label={label}>
+      <div ref={ref} className="stagger no-scrollbar -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto scroll-px-4 px-4 pb-4 pt-1" role="list" aria-label={label}>
         {children}
       </div>
       <div className="pointer-events-none absolute -top-16 right-0 hidden gap-2 sm:flex">
@@ -140,6 +141,27 @@ function Carousel({ children, label }) {
   );
 }
 
+/**
+ * Tab bosib kelinganda birinchi ekrandan pastdagi og'ir qismlar (karuselning qolgan kartalari, pastki bo'limlar)
+ * birinchi kadrdan KEYIN chiziladi: sahifa ~2 baravar kam DOM bilan paydo bo'ladi (sekin telefonda qotish qisqaradi).
+ * Ilova shu sahifa bilan ochilganda va "orqaga" qaytishda — darhol (birinchi chizish / scroll joyi buzilmasin).
+ */
+function useAfterFirstPaint() {
+  const [ready, setReady] = useState(() => !hasNavigated() || navWasPop() || typeof requestAnimationFrame !== 'function');
+  useEffect(() => {
+    if (ready) return undefined;
+    let t = 0;
+    const raf = requestAnimationFrame(() => {
+      t = setTimeout(() => setReady(true), 0);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(t);
+    };
+  }, [ready]);
+  return ready;
+}
+
 const STEPS = [
   { icon: MapIcon, title: 'Toping', text: "Xaritada yoki ro'yxatda o'zingizga yaqin hasharni tanlang — sana, joy va kerakli narsalar ko'rsatilgan." },
   { icon: HandIcon, title: "Qo'shiling", text: "Bir bosishda qatnashing. Tashkilotchining telefoni ochiladi, kalendaringizga qo'shib qo'yasiz." },
@@ -147,9 +169,12 @@ const STEPS = [
 ];
 
 export default function HomePage({ appInfo }) {
-  const stats = useApi('stats', api.stats);
-  const list = useApi('hashars:all', () => api.listHashars().then((l) => sortHashars(Array.isArray(l) ? l : [])));
-  const top = useApi('leaderboard:all', () => api.leaderboard('all'));
+  const stats = useApi(...Q.stats);
+  const list = useApi(...Q.hashars);
+  const rest = useAfterFirstPaint();
+  // Reyting bloki sahifa pastida — unga yaqinlashganda so'raladi (birinchi ekran faqat ro'yxatni kutadi)
+  const [lbRef, lbNear] = useInView({ margin: '600px' });
+  const top = useApi(...(lbNear ? Q.leaderboard('all') : [null, null]));
 
   useEffect(() => {
     if (!list.loading) hideSplash();
@@ -177,7 +202,7 @@ export default function HomePage({ appInfo }) {
         <div className="grid-pattern absolute inset-0" />
         <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 pb-28 pt-10 sm:pt-14 lg:grid-cols-[1.1fr_1fr] lg:px-6 lg:pb-36 lg:pt-20">
           <div className="fade-up">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-[13px] font-semibold text-emerald-50 ring-1 ring-white/20 backdrop-blur">
+            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1.5 text-[13px] font-semibold text-brand-50 ring-1 ring-white/20 backdrop-blur">
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-300" />
@@ -188,7 +213,7 @@ export default function HomePage({ appInfo }) {
               Birgalikda <br className="hidden sm:block" />
               <span className="text-gradient">obod qilamiz</span>
             </h1>
-            <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-emerald-50/85 sm:text-lg">
+            <p className="mt-5 max-w-xl text-[17px] leading-relaxed text-brand-50/85 sm:text-lg">
               Mahallangizdagi tozalash, ko'kalamzorlashtirish va ta'mirlash hasharlarini xaritada toping, bir bosishda qo'shiling
               yoki o'zingiz e'lon qiling.
             </p>
@@ -216,7 +241,7 @@ export default function HomePage({ appInfo }) {
 
       {/* ---------------- KATEGORIYALAR ---------------- */}
       <section className="relative z-[1] mx-auto -mt-16 max-w-7xl px-4 lg:-mt-20 lg:px-6">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
           {CATEGORIES.map((c) => {
             const Icon = CATEGORY_ICONS[c.id];
             return (
@@ -271,7 +296,7 @@ export default function HomePage({ appInfo }) {
             />
           ) : (
             <Carousel label="Yaqinlashayotgan hasharlar">
-              {upcoming.map((h) => (
+              {(rest ? upcoming : upcoming.slice(0, 2)).map((h) => (
                 <div key={h.id} role="listitem" className="w-[290px] shrink-0 snap-start sm:w-[330px]">
                   <HasharCard hashar={h} className="h-full" />
                 </div>
@@ -281,194 +306,201 @@ export default function HomePage({ appInfo }) {
         </div>
       </section>
 
-      {/* ---------------- QANDAY ISHLAYDI ---------------- */}
-      <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
-        <SectionHeader center eyebrow="Oddiy va tez" title="Qanday ishlaydi?" text="Uch qadam — va mahallangiz yanada go'zal." />
-        <ol className="mt-10 grid gap-4 md:grid-cols-3">
-          {STEPS.map((st, i) => (
-            <li key={st.title} className="relative rounded-3xl border border-line bg-surface p-6 shadow-soft">
-              <span className="absolute right-5 top-4 font-display text-6xl font-extrabold text-ink opacity-[0.06]">{i + 1}</span>
-              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-soft text-brand ring-1 ring-brand-line">
-                <st.icon className="h-7 w-7" />
-              </span>
-              <h3 className="mt-5 text-xl font-extrabold text-ink">{st.title}</h3>
-              <p className="mt-2 text-[15px] leading-relaxed text-ink-3">{st.text}</p>
-            </li>
-          ))}
-        </ol>
-      </section>
+      {/* Pastki bo'limlar keyingi kadrda — o'rni oldindan band (footer birinchi ekranga "sakrab" chiqmasin) */}
+      {!rest && <div aria-hidden="true" className="min-h-[150vh]" />}
+      {rest && (
+        <>
+          {/* ---------------- QANDAY ISHLAYDI ---------------- */}
+          <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
+            <SectionHeader center eyebrow="Oddiy va tez" title="Qanday ishlaydi?" text="Uch qadam — va mahallangiz yanada go'zal." />
+            <ol className="mt-10 grid gap-4 md:grid-cols-3">
+              {STEPS.map((st, i) => (
+                <li key={st.title} className="relative rounded-3xl border border-line bg-surface p-6 shadow-soft">
+                  <span className="absolute right-5 top-4 font-display text-6xl font-extrabold text-ink opacity-[0.06]">{i + 1}</span>
+                  <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand-soft text-brand ring-1 ring-brand-line">
+                    <st.icon className="h-7 w-7" />
+                  </span>
+                  <h3 className="mt-5 text-xl font-extrabold text-ink">{st.title}</h3>
+                  <p className="mt-2 text-[15px] leading-relaxed text-ink-3">{st.text}</p>
+                </li>
+              ))}
+            </ol>
+          </section>
 
-      {/* ---------------- OLDIN / KEYIN ---------------- */}
-      <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
-        <div className="overflow-hidden rounded-[36px] border border-line bg-surface shadow-soft">
-          <div className="grid items-center gap-8 p-5 sm:p-8 lg:grid-cols-2 lg:p-12">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-brand">Oldin / Keyin</p>
-              <h2 className="mt-2 text-3xl font-extrabold text-ink sm:text-4xl">Natija — eng yaxshi motivatsiya</h2>
-              <p className="mt-3 text-[15px] leading-relaxed text-ink-3">
-                Har bir yakunlangan hashar "oldin" va "keyin" rasmlari bilan saqlanadi. Slayderni suring va farqni o'zingiz ko'ring.
-              </p>
-              {showcase && (
-                <div className="mt-5 rounded-2xl bg-surface-2 p-4 ring-1 ring-line">
-                  <p className="font-display font-extrabold text-ink [overflow-wrap:anywhere]">{showcase.title}</p>
-                  <p className="mt-1 text-sm text-ink-3">
-                    {showcase.address} · {formatDay(showcase.completed_at || showcase.date_time)} · {showcase.volunteer_count} ko'ngilli
+          {/* ---------------- OLDIN / KEYIN ---------------- */}
+          <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
+            <div className="overflow-hidden rounded-[36px] border border-line bg-surface shadow-soft">
+              <div className="grid items-center gap-8 p-5 sm:p-8 lg:grid-cols-2 lg:p-12">
+                <div>
+                  <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-brand">Oldin / Keyin</p>
+                  <h2 className="mt-2 text-3xl font-extrabold text-ink sm:text-4xl">Natija — eng yaxshi motivatsiya</h2>
+                  <p className="mt-3 text-[15px] leading-relaxed text-ink-3">
+                    Har bir yakunlangan hashar "oldin" va "keyin" rasmlari bilan saqlanadi. Slayderni suring va farqni o'zingiz ko'ring.
                   </p>
+                  {showcase && (
+                    <div className="mt-5 rounded-2xl bg-surface-2 p-4 ring-1 ring-line">
+                      <p className="font-display font-extrabold text-ink [overflow-wrap:anywhere]">{showcase.title}</p>
+                      <p className="mt-1 text-sm text-ink-3">
+                        {showcase.address} · {formatDay(showcase.completed_at || showcase.date_time)} · {showcase.volunteer_count} ko'ngilli
+                      </p>
+                    </div>
+                  )}
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link to="/natijalar" className={cx(btn.primary, 'h-12 px-6')}>
+                      Galereyani ochish <ArrowRightIcon className="h-4 w-4" />
+                    </Link>
+                    {showcase && (
+                      <Link to={`/hashar/${showcase.id}`} className={cx(btn.ghost, 'h-12 px-5')}>
+                        Batafsil
+                      </Link>
+                    )}
+                  </div>
                 </div>
-              )}
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link to="/natijalar" className={cx(btn.primary, 'h-12 px-6')}>
-                  Galereyani ochish <ArrowRightIcon className="h-4 w-4" />
-                </Link>
-                {showcase && (
-                  <Link to={`/hashar/${showcase.id}`} className={cx(btn.ghost, 'h-12 px-5')}>
-                    Batafsil
-                  </Link>
+                {showcase ? (
+                  <BeforeAfterSlider before={mediaUrl(showcase.before_url)} after={mediaUrl(showcase.after_url)} alt={showcase.title} />
+                ) : list.loading ? (
+                  <div className="skeleton aspect-[16/10] rounded-3xl" />
+                ) : (
+                  <div className="grid aspect-[16/10] place-items-center rounded-3xl bg-gradient-to-br from-brand-50 to-brand-100 text-center dark:from-brand-400/10 dark:to-brand-400/5">
+                    <div className="px-6">
+                      <CameraIcon className="mx-auto h-10 w-10 text-brand" />
+                      <p className="mt-3 font-bold text-ink">Birinchi natija sizdan bo'lsin!</p>
+                      <p className="mt-1 text-sm text-ink-3">Hasharni yakunlab "Keyin" rasmini yuklang.</p>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
-            {showcase ? (
-              <BeforeAfterSlider before={mediaUrl(showcase.before_url)} after={mediaUrl(showcase.after_url)} alt={showcase.title} />
-            ) : list.loading ? (
-              <div className="skeleton aspect-[16/10] rounded-3xl" />
-            ) : (
-              <div className="grid aspect-[16/10] place-items-center rounded-3xl bg-gradient-to-br from-emerald-50 to-emerald-100 text-center dark:from-emerald-400/10 dark:to-emerald-400/5">
-                <div className="px-6">
-                  <CameraIcon className="mx-auto h-10 w-10 text-brand" />
-                  <p className="mt-3 font-bold text-ink">Birinchi natija sizdan bo'lsin!</p>
-                  <p className="mt-1 text-sm text-ink-3">Hasharni yakunlab "Keyin" rasmini yuklang.</p>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
+          </section>
 
-      {/* ---------------- TOP KO'NGILLILAR ---------------- */}
-      {leaders.length > 0 && (
-        <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
-          <SectionHeader
-            eyebrow="Reyting"
-            title="Top ko'ngillilar"
-            text="Eng faol hasharchilar — ularga qo'shiling!"
-            action={
-              <Link to="/reyting" className="inline-flex items-center gap-1.5 text-sm font-bold text-brand hover:underline">
-                To'liq reyting <ArrowRightIcon className="h-4 w-4" />
-              </Link>
-            }
-          />
-          <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            {leaders.map((r, i) => (
-              <li key={r.user.id}>
-                <Link
-                  to={`/u/${r.user.id}`}
-                  className="flex items-center gap-3 rounded-3xl border border-line bg-surface p-4 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift lg:flex-col lg:text-center"
-                >
-                  <div className="relative">
-                    <Avatar name={r.user.name} src={r.user.avatar_url} size="lg" />
-                    <span
-                      className={cx(
-                        'absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full text-[11px] font-extrabold ring-2 ring-surface',
-                        i === 0 ? 'bg-amber-400 text-slate-950' : i === 1 ? 'bg-slate-300 text-slate-900' : i === 2 ? 'bg-orange-300 text-slate-900' : 'bg-surface-3 text-ink-2',
-                      )}
+          {/* ---------------- TOP KO'NGILLILAR ---------------- */}
+          <div ref={lbRef} aria-hidden="true" />
+          {leaders.length > 0 && (
+            <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
+              <SectionHeader
+                eyebrow="Reyting"
+                title="Top ko'ngillilar"
+                text="Eng faol hasharchilar — ularga qo'shiling!"
+                action={
+                  <Link to="/reyting" className="inline-flex items-center gap-1.5 text-sm font-bold text-brand hover:underline">
+                    To'liq reyting <ArrowRightIcon className="h-4 w-4" />
+                  </Link>
+                }
+              />
+              <ol className="stagger mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                {leaders.map((r, i) => (
+                  <li key={r.user.id}>
+                    <Link
+                      to={`/u/${r.user.id}`}
+                      className="flex items-center gap-3 rounded-3xl border border-line bg-surface p-4 shadow-soft transition hover:-translate-y-0.5 hover:shadow-lift lg:flex-col lg:text-center"
                     >
-                      {i + 1}
-                    </span>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate font-bold text-ink">{r.user.name}</p>
-                    {/* joined — o'zi tashkil qilganlarisiz; jami hasharlar = qatnashgan + tashkil qilgan */}
-                    <p className="text-xs font-semibold text-ink-3">
-                      {r.score} ball · {(r.joined || 0) + (r.created || 0)} hashar
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
+                      <div className="relative">
+                        <Avatar name={r.user.name} src={r.user.avatar_url} size="lg" />
+                        <span
+                          className={cx(
+                            'absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-full text-[11px] font-extrabold ring-2 ring-surface',
+                            i === 0 ? 'bg-amber-400 text-slate-950' : i === 1 ? 'bg-slate-300 text-slate-900' : i === 2 ? 'bg-orange-300 text-slate-900' : 'bg-surface-3 text-ink-2',
+                          )}
+                        >
+                          {i + 1}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-bold text-ink">{r.user.name}</p>
+                        {/* joined — o'zi tashkil qilganlarisiz; jami hasharlar = qatnashgan + tashkil qilgan */}
+                        <p className="text-xs font-semibold text-ink-3">
+                          {r.score} ball · {(r.joined || 0) + (r.created || 0)} hashar
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
-      {/* ---------------- NEGA BIZ ---------------- */}
-      <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
-        <div className="grid gap-4 md:grid-cols-3">
-          {[
-            { icon: ZapIcon, title: 'Bir bosishda', text: "Ro'yxatdan o'tish bir daqiqa. Qatnashish — bitta tugma." },
-            { icon: ShieldIcon, title: 'Xavfsiz', text: "Telefon raqamingiz faqat tashkilotchiga, qo'shilganingizdan keyin ko'rinadi." },
-            { icon: TrophyIcon, title: 'Rag\'bat', text: "Ball to'plang, nishonlar oling va mahalla reytingida yuqoriga ko'tariling." },
-          ].map((f) => (
-            <div key={f.title} className="flex gap-4 rounded-3xl bg-surface-2 p-5 ring-1 ring-line">
-              <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-surface text-brand shadow-sm ring-1 ring-line">
-                <f.icon className="h-6 w-6" />
-              </span>
-              <div>
-                <h3 className="text-lg font-extrabold text-ink">{f.title}</h3>
-                <p className="mt-1 text-sm leading-relaxed text-ink-3">{f.text}</p>
-              </div>
+          {/* ---------------- NEGA BIZ ---------------- */}
+          <section className="mx-auto max-w-7xl px-4 pt-16 lg:px-6 lg:pt-24">
+            <div className="grid gap-4 md:grid-cols-3">
+              {[
+                { icon: ZapIcon, title: 'Bir bosishda', text: "Ro'yxatdan o'tish bir daqiqa. Qatnashish — bitta tugma." },
+                { icon: ShieldIcon, title: 'Xavfsiz', text: "Telefon raqamingiz faqat tashkilotchiga, qo'shilganingizdan keyin ko'rinadi." },
+                { icon: TrophyIcon, title: 'Rag\'bat', text: "Ball to'plang, nishonlar oling va mahalla reytingida yuqoriga ko'tariling." },
+              ].map((f) => (
+                <div key={f.title} className="flex gap-4 rounded-3xl bg-surface-2 p-5 ring-1 ring-line">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-surface text-brand shadow-sm ring-1 ring-line">
+                    <f.icon className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <h3 className="text-lg font-extrabold text-ink">{f.title}</h3>
+                    <p className="mt-1 text-sm leading-relaxed text-ink-3">{f.text}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
 
-      {/* ---------------- APK ---------------- */}
-      {!IS_NATIVE && (
-        <section className="mx-auto max-w-7xl px-4 py-16 lg:px-6 lg:py-24">
-          <div className="hero-bg relative overflow-hidden rounded-[36px] px-6 py-10 text-white sm:px-10 lg:px-14 lg:py-14">
-            <div className="grid-pattern absolute inset-0" />
-            <div className="relative grid items-center gap-10 lg:grid-cols-[1.3fr_1fr]">
-              <div>
-                <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-emerald-200">Android ilova</p>
-                <h2 className="mt-2 text-3xl font-extrabold sm:text-4xl">Hasharchilar — cho'ntagingizda</h2>
-                <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-emerald-50/85">
-                  Kamera bilan darhol rasm oling, joylashuvingiz bo'yicha yaqin hasharlarni toping va bir tegishda qo'shiling. Tez, yengil, bepul.
-                </p>
-                <ul className="mt-5 grid gap-2 text-sm font-semibold text-emerald-50 sm:grid-cols-2">
-                  {['Oflayn rejimga tayyor', 'Tungi rejim', 'Kamera va GPS', 'Ulashish bir tegishda'].map((t) => (
-                    <li key={t} className="flex items-center gap-2">
-                      <CheckCircleIcon className="h-4 w-4 text-amber-300" /> {t}
-                    </li>
-                  ))}
-                </ul>
-                <a href={appDownloadUrl(appInfo)} download="hasharchilar.apk" className={cx(btn.cta, 'mt-7 h-14 px-7 text-base')}>
-                  <DownloadIcon className="h-5 w-5" /> APK yuklab olish
-                  {appInfo && appInfo.size ? <span className="text-sm font-semibold opacity-70">· {formatSize(appInfo.size)}</span> : null}
-                </a>
-              </div>
-              {/* Telefon maketi */}
-              <div className="relative mx-auto hidden h-[360px] w-[200px] sm:block" aria-hidden="true">
-                <div className="absolute inset-0 rounded-[36px] bg-slate-950 p-2.5 shadow-2xl ring-1 ring-white/20">
-                  <div className="relative h-full overflow-hidden rounded-[28px] bg-gradient-to-b from-emerald-50 to-white">
-                    <div className="h-24 bg-gradient-to-br from-emerald-700 to-emerald-500 p-3">
-                      <div className="h-2 w-16 rounded-full bg-white/50" />
-                      <div className="mt-3 h-3 w-28 rounded-full bg-white/90" />
-                      <div className="mt-2 h-3 w-20 rounded-full bg-amber-300" />
-                    </div>
-                    <div className="space-y-2 p-3">
-                      {[0, 1, 2].map((i) => (
-                        <div key={i} className="flex gap-2 rounded-xl bg-white p-2 shadow-sm">
-                          <div className={cx('h-10 w-10 rounded-lg bg-gradient-to-br', CATEGORIES[i].tint)} />
-                          <div className="flex-1 space-y-1.5 pt-1">
-                            <div className="h-2 w-full rounded-full bg-slate-200" />
-                            <div className="h-2 w-2/3 rounded-full bg-slate-100" />
-                          </div>
-                        </div>
+          {/* ---------------- APK ---------------- */}
+          {!IS_NATIVE && (
+            <section className="mx-auto max-w-7xl px-4 py-16 lg:px-6 lg:py-24">
+              <div className="hero-bg relative overflow-hidden rounded-[36px] px-6 py-10 text-white sm:px-10 lg:px-14 lg:py-14">
+                <div className="grid-pattern absolute inset-0" />
+                <div className="relative grid items-center gap-10 lg:grid-cols-[1.3fr_1fr]">
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-[0.14em] text-brand-200">Android ilova</p>
+                    <h2 className="mt-2 text-3xl font-extrabold sm:text-4xl">Hasharchilar — cho'ntagingizda</h2>
+                    <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-brand-50/85">
+                      Kamera bilan darhol rasm oling, joylashuvingiz bo'yicha yaqin hasharlarni toping va bir tegishda qo'shiling. Tez, yengil, bepul.
+                    </p>
+                    <ul className="mt-5 grid gap-2 text-sm font-semibold text-brand-50 sm:grid-cols-2">
+                      {['Oflayn rejimga tayyor', 'Tungi rejim', 'Kamera va GPS', 'Ulashish bir tegishda'].map((t) => (
+                        <li key={t} className="flex items-center gap-2">
+                          <CheckCircleIcon className="h-4 w-4 text-amber-300" /> {t}
+                        </li>
                       ))}
-                    </div>
-                    <div className="absolute inset-x-0 bottom-0 flex h-12 items-center justify-around border-t border-slate-100 bg-white">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      <span className="h-2 w-2 rounded-full bg-slate-300" />
-                      <span className="-mt-6 grid h-9 w-9 place-items-center rounded-full bg-amber-400 text-slate-900">
-                        <PlusIcon className="h-5 w-5" strokeWidth={3} />
-                      </span>
-                      <span className="h-2 w-2 rounded-full bg-slate-300" />
-                      <span className="h-2 w-2 rounded-full bg-slate-300" />
+                    </ul>
+                    <a href={appDownloadUrl(appInfo)} download="hasharchilar.apk" className={cx(btn.cta, 'mt-7 h-14 px-7 text-base')}>
+                      <DownloadIcon className="h-5 w-5" /> APK yuklab olish
+                      {appInfo && appInfo.size ? <span className="text-sm font-semibold opacity-70">· {formatSize(appInfo.size)}</span> : null}
+                    </a>
+                  </div>
+                  {/* Telefon maketi */}
+                  <div className="relative mx-auto hidden h-[360px] w-[200px] sm:block" aria-hidden="true">
+                    <div className="absolute inset-0 rounded-[36px] bg-slate-950 p-2.5 shadow-2xl ring-1 ring-white/20">
+                      <div className="relative h-full overflow-hidden rounded-[28px] bg-gradient-to-b from-brand-50 to-white">
+                        <div className="h-24 bg-gradient-to-br from-brand-700 to-brand-500 p-3">
+                          <div className="h-2 w-16 rounded-full bg-white/50" />
+                          <div className="mt-3 h-3 w-28 rounded-full bg-white/90" />
+                          <div className="mt-2 h-3 w-20 rounded-full bg-amber-300" />
+                        </div>
+                        <div className="space-y-2 p-3">
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} className="flex gap-2 rounded-xl bg-white p-2 shadow-sm">
+                              <div className={cx('h-10 w-10 rounded-lg bg-gradient-to-br', CATEGORIES[i].tint)} />
+                              <div className="flex-1 space-y-1.5 pt-1">
+                                <div className="h-2 w-full rounded-full bg-slate-200" />
+                                <div className="h-2 w-2/3 rounded-full bg-slate-100" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 flex h-12 items-center justify-around border-t border-slate-100 bg-white">
+                          <span className="h-2 w-2 rounded-full bg-brand-500" />
+                          <span className="h-2 w-2 rounded-full bg-slate-300" />
+                          <span className="-mt-6 grid h-9 w-9 place-items-center rounded-full bg-amber-400 text-slate-900">
+                            <PlusIcon className="h-5 w-5" strokeWidth={3} />
+                          </span>
+                          <span className="h-2 w-2 rounded-full bg-slate-300" />
+                          <span className="h-2 w-2 rounded-full bg-slate-300" />
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
+            </section>
+          )}
+        </>
       )}
       {IS_NATIVE && <div className="h-12" />}
     </div>

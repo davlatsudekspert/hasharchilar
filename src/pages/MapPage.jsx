@@ -6,13 +6,13 @@ import { CATEGORY_ICONS, ChevronDownIcon, ListIcon, LocateIcon, MapIcon, PlusIco
 import { HasharMap } from '../components/map/index.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, CardSkeleton, Chip, EmptyState, ErrorState, Segmented, Spinner } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { CATEGORIES } from '../lib/meta.js';
 import { registerBackHandler } from '../lib/modals.js';
 import { GEO_MESSAGES, getCurrentPosition, haptic, hideSplash } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
-import { cx, distanceKm, sortHashars } from '../lib/utils.js';
+import { cx, distanceKm } from '../lib/utils.js';
 
 const DESKTOP_PAD = { top: 72, bottom: 88, left: 72, right: 72 };
 const SIDE_PAD = { left: 24, right: 72 }; // o'ngda zoom tugmalari (+ klaster halqasi)
@@ -40,7 +40,7 @@ const STATUS = [
 
 export default function MapPage() {
   const toast = useToast();
-  const list = useApi('hashars:all', () => api.listHashars().then((l) => sortHashars(Array.isArray(l) ? l : [])));
+  const list = useApi(...Q.hashars);
   const [cat, setCat] = useState('all');
   const [status, setStatus] = useState('all');
   const [selectedId, setSelectedId] = useState(null);
@@ -227,20 +227,21 @@ export default function MapPage() {
           aria-label="Mening joyim"
           className={cx(
             'absolute right-3 z-[5] inline-flex h-12 items-center gap-2 rounded-2xl bg-surface px-4 text-sm font-bold text-ink shadow-lift ring-1 ring-line transition active:scale-95 lg:bottom-8 lg:right-5',
-            compact ? 'max-lg:bottom-[calc(124px+var(--sab))]' : 'max-lg:bottom-[calc(248px+var(--sab))]',
+            compact ? 'max-lg:bottom-[calc(124px+var(--sab))]' : 'max-lg:bottom-[calc(264px+var(--sab))]',
           )}
         >
           {geoBusy ? <Spinner className="text-sky-600" /> : <LocateIcon className="h-5 w-5 text-sky-600" />}
           <span className="hidden sm:inline">Mening joyim</span>
         </button>
 
-        {/* Mobil: pastki panel. Peek: sarlavha 40 + karta 104 (+ halqa/FAB uchun joy) = 168px; yotiq — faqat sarlavha */}
+        {/* Mobil: pastki panel. Peek: sarlavha 40 + karta 104 + pastda 32 (tab bar'dan chiqib turgan ＋ tugma va uning
+            halqasi kartaga tegmasin) = 184px; yotiq — faqat sarlavha */}
         <div
           ref={sheetRef}
           className={cx(
             'absolute inset-x-0 z-[6] transition-[height] duration-300 lg:hidden',
             'bottom-[calc(68px+var(--sab))]',
-            sheet === 'full' ? 'h-[62%]' : compact ? 'h-[44px]' : 'h-[168px]',
+            sheet === 'full' ? 'h-[62%]' : compact ? 'h-[44px]' : 'h-[184px]',
           )}
         >
           <div className="flex h-full flex-col rounded-t-[28px] border-t border-line bg-surface/95 shadow-[0_-12px_40px_-12px_rgba(0,0,0,.25)] backdrop-blur">
@@ -260,9 +261,9 @@ export default function MapPage() {
               </span>
             </button>
             {sheet === 'full' ? (
-              <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">{listBody}</div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-10">{listBody}</div>
             ) : compact ? null : (
-              <div ref={carouselRef} className="no-scrollbar flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-4 pt-1.5">
+              <div ref={carouselRef} className="no-scrollbar flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-8 pt-1.5">
                 {list.loading
                   ? [0, 1].map((i) => <div key={i} className="skeleton h-[104px] w-[86%] max-w-[360px] shrink-0 rounded-3xl" />)
                   : visible.length === 0

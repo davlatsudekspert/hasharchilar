@@ -117,17 +117,24 @@ jobs:
       # GEO_MOCK:1 — /api/geo/* haqiqiy Nominatim o'rniga deterministik soxta javob beradi (testlar tarmoqqa chiqmaydi)
       # EMAIL_MOCK:1 — email kodlari Resend'ga yuborilmaydi, javobda `dev_code` qaytadi (tests/email.test.mjs);
       #   tests/email.test.mjs email O'CHIQ holatni sinash uchun o'zi uchinchi (vaqtinchalik) wrangler dev ochadi.
+      #   Faqat EMAIL_MOCK=1 da `x-test-now` sarlavhasi ishlaydi (Payme 12 soatlik timeout, QR davomat oynalari).
+      # PAY_VARS — SOXTA Payme/Click kalitlari (haqiqiy emas; tests/helpers.mjs → PAY_TEST bilan bir xil):
+      #   to'lov testlari (tests/payments.suite.mjs) imzo va avtorizatsiyani shu qiymatlar bilan sinaydi.
       - name: wrangler dev — D1 (:8787) va Durable Object (:8788) rejimlari
         env:
           TEST_ADMIN_PHONES: '+998900000099'
         run: |
           set -euo pipefail
+          PAY_VARS=(--var PAYME_MERCHANT_ID:hc-test-merchant-0001 --var PAYME_KEY:hc-test-payme-key
+            --var CLICK_SERVICE_ID:10001 --var CLICK_MERCHANT_ID:20002 --var CLICK_SECRET_KEY:hc-test-click-secret
+            --var CLICK_MERCHANT_USER_ID:30003)
           node scripts/wrangler-config.mjs --storage "do"
           nohup npx wrangler dev --port 8787 --ip 127.0.0.1 --inspector-port 9229 \
-            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 --var EMAIL_MOCK:1 > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
+            --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 --var EMAIL_MOCK:1 "${PAY_VARS[@]}" \
+            > "$RUNNER_TEMP/wrangler-d1.log" 2>&1 &
           nohup npx wrangler dev --config wrangler.deploy.json --port 8788 --ip 127.0.0.1 --inspector-port 9230 \
             --persist-to "$RUNNER_TEMP/do-state" --var "ADMIN_PHONES:${TEST_ADMIN_PHONES}" --var GEO_MOCK:1 --var EMAIL_MOCK:1 \
-            > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
+            "${PAY_VARS[@]}" > "$RUNNER_TEMP/wrangler-do.log" 2>&1 &
           for port in 8787 8788; do
             ready=""
             for i in $(seq 1 60); do
@@ -145,15 +152,19 @@ jobs:
             fi
           done
 
+      # REQUIRE_PAYMENTS=1 — server soxta to'lov kalitlarisiz ishga tushgan bo'lsa Payme/Click testlari
+      # o'tkazib yuborilmaydi, xato beradi (v4 to'lov testlari tests/api.test.mjs oxirida ulanadi)
       - name: API testlari — D1 rejimi
         env:
           BASE_URL: http://127.0.0.1:8787
+          REQUIRE_PAYMENTS: '1'
         run: npm run test:api
 
       - name: API testlari — Durable Object rejimi
         env:
           BASE_URL: http://127.0.0.1:8788
           STORAGE: do
+          REQUIRE_PAYMENTS: '1'
         run: npm run test:api
 
       - name: wrangler dev loglari (xato bo'lsa)
@@ -865,6 +876,44 @@ jobs:
           printf '%s' "$ADMIN_PHONES" | npx wrangler secret put ADMIN_PHONES --name "$WORKER_NAME" > "$RUNNER_TEMP/secret.log" 2>&1 \
             || { echo "::error::ADMIN_PHONES secret'ini o'rnatib bo'lmadi"; grep -v '+998' "$RUNNER_TEMP/secret.log" || true; exit 1; }
           echo "✓ ADMIN_PHONES Worker secret'i yangilandi ($(printf '%s' "$ADMIN_PHONES" | tr ',;' '\n' | grep -c '[0-9]') ta raqam)"
+
+      # To'lov provayderlari (ixtiyoriy, README → To'lovlar): GitHub secret HASHARCHILAR_<NOM> → Worker secret <NOM>:
+      #   PAYME_MERCHANT_ID, PAYME_KEY, PAYME_TEST_KEY, PAYME_TEST_MODE, CLICK_SERVICE_ID, CLICK_MERCHANT_ID,
+      #   CLICK_SECRET_KEY, CLICK_MERCHANT_USER_ID.
+      # Faqat BO'SH BO'LMAGANLARI yoziladi; bo'shi indamay o'tkazib yuboriladi (Worker'dagi mavjud qiymat o'zgarmaydi).
+      # Secretlar hech qachon o'chirilmaydi. Qiymatlar niqoblanadi (≥ 4 belgi — "1" kabi qisqa qiymat niqoblansa
+      # loglardagi barcha "1" lar yashirinib qoladi) va wrangler'ga stdin orqali beriladi (argv'da ko'rinmaydi).
+      # Kalitlar bo'lmasa sayt ishlayveradi: to'lov faqat "qo'lda" (admin tasdiqlaydi). Token faqat shu qadamda.
+      - name: To'lov provayderlari (Worker secret'lari PAYME_*, CLICK_*)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PAYME_MERCHANT_ID: ${{ secrets.HASHARCHILAR_PAYME_MERCHANT_ID }}
+          PAYME_KEY: ${{ secrets.HASHARCHILAR_PAYME_KEY }}
+          PAYME_TEST_KEY: ${{ secrets.HASHARCHILAR_PAYME_TEST_KEY }}
+          PAYME_TEST_MODE: ${{ secrets.HASHARCHILAR_PAYME_TEST_MODE }}
+          CLICK_SERVICE_ID: ${{ secrets.HASHARCHILAR_CLICK_SERVICE_ID }}
+          CLICK_MERCHANT_ID: ${{ secrets.HASHARCHILAR_CLICK_MERCHANT_ID }}
+          CLICK_SECRET_KEY: ${{ secrets.HASHARCHILAR_CLICK_SECRET_KEY }}
+          CLICK_MERCHANT_USER_ID: ${{ secrets.HASHARCHILAR_CLICK_MERCHANT_USER_ID }}
+        run: |
+          set -euo pipefail
+          LOG="$RUNNER_TEMP/payment-secret.log"
+          SET=()
+          for NAME in PAYME_MERCHANT_ID PAYME_KEY PAYME_TEST_KEY PAYME_TEST_MODE \
+                      CLICK_SERVICE_ID CLICK_MERCHANT_ID CLICK_SECRET_KEY CLICK_MERCHANT_USER_ID; do
+            VALUE="$(printf '%s' "${!NAME:-}" | tr -d '[:space:]')"
+            [ -n "$VALUE" ] || continue
+            if [ "${#VALUE}" -ge 4 ]; then echo "::add-mask::${VALUE}"; fi
+            if ! printf '%s' "$VALUE" | npx wrangler secret put "$NAME" --name "$WORKER_NAME" > "$LOG" 2>&1; then
+              echo "::error::${NAME} secret'ini o'rnatib bo'lmadi"
+              grep -vF "$VALUE" "$LOG" || true
+              exit 1
+            fi
+            SET+=("$NAME")
+          done
+          if [ "${#SET[@]}" -gt 0 ]; then
+            echo "✓ To'lov Worker secret'lari yangilandi: ${SET[*]}"
+          fi
 
       # Yangi workers.dev manzili (SSL) tarqalishi bir necha daqiqa olishi mumkin.
       - name: /api/health

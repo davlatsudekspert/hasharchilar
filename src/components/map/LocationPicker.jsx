@@ -202,7 +202,7 @@ export default function LocationPicker({ value, onChange, onReverse, wantAddress
           placeholder="Ko'cha, mahalla yoki mo'ljal"
           aria-label="Manzilni qidirish"
           className={cx(
-            'w-full rounded-2xl border border-line bg-surface py-3 pl-12 text-base text-ink outline-none placeholder:text-ink-3 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15',
+            'w-full rounded-2xl border border-line bg-surface py-3 pl-12 text-base text-ink outline-none placeholder:text-ink-3 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15',
             canSearch ? 'pr-[148px]' : q ? 'pr-12' : 'pr-4',
           )}
         />
@@ -226,7 +226,7 @@ export default function LocationPicker({ value, onChange, onReverse, wantAddress
               type="button"
               onClick={search}
               disabled={searching}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 active:scale-95 disabled:opacity-80 dark:bg-emerald-500 dark:text-emerald-950"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand-600 px-3 text-sm font-bold text-white shadow-sm transition hover:bg-brand-700 active:scale-95 disabled:opacity-80 dark:bg-primary dark:text-brand-950"
             >
               {searching ? <Spinner className="h-4 w-4" /> : <SearchIcon className="h-4 w-4" strokeWidth={2.4} />} Qidirish
             </button>
@@ -265,7 +265,7 @@ export default function LocationPicker({ value, onChange, onReverse, wantAddress
         <div className="pointer-events-none absolute left-1/2 top-1/2 z-[3] -translate-x-1/2 -translate-y-full">
           <div
             className={cx('transition duration-200', moving && '-translate-y-3 scale-105')}
-            dangerouslySetInnerHTML={{ __html: pickPinSvg(confirmed || moving ? '#059669' : '#94a3b8') }}
+            dangerouslySetInnerHTML={{ __html: pickPinSvg(confirmed || moving ? 'var(--a-600)' : '#94a3b8') }}
           />
           <span className={cx('mx-auto -mt-1 block h-1.5 w-4 rounded-full bg-black/30 blur-[1px] transition', moving ? 'scale-75 opacity-60' : '')} />
         </div>

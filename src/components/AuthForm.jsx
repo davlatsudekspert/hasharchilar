@@ -17,6 +17,8 @@ export const AUTH_REASONS = {
   comment: 'Izoh qoldirish uchun tizimga kiring.',
   profile: "Profilingizni ko'rish uchun tizimga kiring.",
   admin: 'Admin panelga kirish uchun administrator hisobi bilan kiring.',
+  save: "Hasharni saqlab qo'yish uchun tizimga kiring.",
+  checkin: 'Davomatni tasdiqlash uchun tizimga kiring.',
 };
 
 /** Server xatosini maydonga bog'laydi (matndagi kalit so'z bo'yicha), topilmasa — umumiy xato. */

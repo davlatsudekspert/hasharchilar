@@ -8,6 +8,7 @@ import m0001 from '../migrations/0001_init.sql';
 import m0002 from '../migrations/0002_admin.sql';
 import m0003 from '../migrations/0003_v3.sql';
 import m0004 from '../migrations/0004_email.sql';
+import m0005 from '../migrations/0005_v4.sql';
 
 /** Tartib muhim: nomi bo'yicha o'sish (D1 dagi kabi). */
 export const MIGRATIONS = [
@@ -15,4 +16,5 @@ export const MIGRATIONS = [
   { name: '0002_admin.sql', sql: m0002 },
   { name: '0003_v3.sql', sql: m0003 },
   { name: '0004_email.sql', sql: m0004 },
+  { name: '0005_v4.sql', sql: m0005 },
 ];

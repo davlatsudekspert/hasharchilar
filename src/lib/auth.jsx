@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearToken, getToken, onUnauthorized, setToken } from './api.js';
 import { storage, USER_KEY } from './storage.js';
+import { clearCache } from './store.js';
 
 const AuthContext = createContext(null);
 
@@ -26,10 +27,13 @@ export function AuthProvider({ children }) {
     else storage.remove(USER_KEY);
   }, []);
 
+  // Chiqishda foydalanuvchi keshi (sessionStorage dagi to'lov, telefon va h.k.) ham tozalanadi —
+  // keyingi hisob yoki mehmon oldingi foydalanuvchi ma'lumotini ko'rmasin
   const signOutLocal = useCallback(() => {
     clearToken();
     saveUser(null);
     setStats(null);
+    clearCache();
   }, [saveUser]);
 
   /** /api/me dan foydalanuvchi va statistikani yangilaydi. */
@@ -59,11 +63,15 @@ export function AuthProvider({ children }) {
     return onUnauthorized(() => {
       saveUser(null);
       setStats(null);
+      clearCache();
     });
   }, [refresh, saveUser]);
 
   const finishAuth = useCallback(
     (data) => {
+      // Boshqa hisobga kirildi — oldingi foydalanuvchi keshi qolmasin
+      const prev = storage.getJSON(USER_KEY);
+      if (prev && data.user && prev.id !== data.user.id) clearCache();
       setToken(data.token);
       saveUser(data.user);
       refresh().catch(() => {});

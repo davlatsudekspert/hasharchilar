@@ -105,7 +105,11 @@ export function OtpInput({ value, onChange, onComplete, disabled, invalid, autoF
 
   useEffect(() => {
     if (!autoFocus || disabled) return undefined;
-    const t = setTimeout(() => focusAt(Math.min(value.length, OTP_LENGTH - 1)), 60);
+    // Foydalanuvchi allaqachon katakka bosgan / yoza boshlagan bo'lsa fokus tortib olinmaydi (birinchi raqam yo'qolardi)
+    const t = setTimeout(() => {
+      if (refs.current.includes(document.activeElement)) return;
+      focusAt(Math.min(valueRef.current.length, OTP_LENGTH - 1));
+    }, 60);
     return () => clearTimeout(t);
     // faqat birinchi ko'rinishda
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -207,9 +211,9 @@ export function OtpInput({ value, onChange, onComplete, disabled, invalid, autoF
             else e.target.select();
           }}
           className={cx(
-            'h-14 w-full min-w-0 rounded-2xl border bg-surface p-0 text-center font-display text-2xl font-extrabold text-ink tabular caret-emerald-500 outline-none transition sm:h-16 sm:text-[28px]',
-            'focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15 dark:focus:ring-emerald-400/20 disabled:opacity-60',
-            invalid ? invalidCls : d ? 'border-emerald-300 bg-brand-soft dark:border-emerald-400/40' : 'border-line',
+            'h-14 w-full min-w-0 rounded-2xl border bg-surface p-0 text-center font-display text-2xl font-extrabold text-ink tabular caret-brand-500 outline-none transition sm:h-16 sm:text-[28px]',
+            'focus:border-brand-500 focus:ring-4 focus:ring-brand-500/15 dark:focus:ring-brand-400/20 disabled:opacity-60',
+            invalid ? invalidCls : d ? 'border-brand-300 bg-brand-soft dark:border-brand-400/40' : 'border-line',
           )}
         />
       ))}

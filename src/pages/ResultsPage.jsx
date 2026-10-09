@@ -5,13 +5,13 @@ import { Thumb } from '../components/HasharCard.jsx';
 import { ArrowRightIcon, CalendarIcon, CameraIcon, CATEGORY_ICONS, ImageIcon, PinIcon, UsersIcon } from '../components/icons.jsx';
 import PullToRefresh from '../components/PullToRefresh.jsx';
 import { btn, CategoryChip, Chip, EmptyState, ErrorState, Link, PageHeader } from '../components/ui.jsx';
-import { api } from '../lib/api.js';
 import { mediaUrl } from '../lib/config.js';
 import { CATEGORIES } from '../lib/meta.js';
 import { hideSplash } from '../lib/native.js';
 import { navigate } from '../lib/router.js';
+import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
-import { cx, formatDay, sortHashars } from '../lib/utils.js';
+import { cx, formatDay } from '../lib/utils.js';
 
 function ResultCard({ h, big }) {
   const before = mediaUrl(h.before_url);
@@ -24,7 +24,7 @@ function ResultCard({ h, big }) {
         ) : (
           <div className="relative overflow-hidden rounded-[20px]">
             <Thumb hashar={h} className={cx('w-full', big ? 'aspect-[16/10]' : 'aspect-[4/3]')} />
-            <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Keyin</span>
+            <span className="absolute left-3 top-3 rounded-full bg-brand-600 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide text-white">Keyin</span>
           </div>
         )}
       </div>
@@ -61,7 +61,7 @@ function ResultCard({ h, big }) {
 }
 
 export default function ResultsPage() {
-  const list = useApi('hashars:all', () => api.listHashars().then((l) => sortHashars(Array.isArray(l) ? l : [])));
+  const list = useApi(...Q.hashars);
   const [cat, setCat] = useState('all');
 
   useEffect(() => {
@@ -126,7 +126,7 @@ export default function ResultsPage() {
             <div className="space-y-5">
               <ResultCard h={first} big />
               {rest.length > 0 && (
-                <ul className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                <ul className="stagger grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {rest.map((h) => (
                     <li key={h.id}>
                       <ResultCard h={h} />
