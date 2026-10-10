@@ -38,7 +38,7 @@ export function siteOrigin(c) {
 }
 
 /**
- * Egasiga ko'rsatiladigan to'lov ma'lumotlari: { amount (so'm), payme_url?, click_url?, manual_note? }.
+ * Egasiga ko'rsatiladigan to'lov ma'lumotlari: { amount (so'm), payme_url?, click_url?, manual_note?, telegram? }.
  * Havolalar faqat sozlangan provayderlar uchun.
  */
 export function paymentInfo(c, hasharId, settings) {
@@ -52,13 +52,14 @@ export function paymentInfo(c, hasharId, settings) {
     if (click.enabled) out.click_url = clickPayUrl(click, { hasharId, amountSom: amount, returnTo: back });
   }
   if (settings.manual_payment_note) out.manual_note = settings.manual_payment_note;
+  if (settings.payment_telegram) out.telegram = settings.payment_telegram;
   return out;
 }
 
 export const paymentRoutes = new Hono();
 
 // GET /api/hashars/:id/payment — egasi yoki admin: {hashar_id, status, amount, currency, providers,
-// payme_url?, click_url?, manual_note?, history: PaymentDTO[]}. Havolalar faqat to'lanmagan hasharda.
+// payme_url?, click_url?, manual_note?, telegram?, history: PaymentDTO[]}. Havolalar faqat to'lanmagan hasharda.
 // amount: to'lanmagan — joriy narx (so'm); to'langan — haqiqatan to'langan summa (oxirgi muvaffaqiyatli to'lov),
 // to'lov yozuvi bo'lmasa (bepul / v4 dan oldingi / 'waived') — null.
 // Narx 0 (bepul) bo'lsa egasining to'lanmagan hashari shu yerda bepul e'lon qilinadi ('waived' + 'published'):

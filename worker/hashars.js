@@ -352,7 +352,7 @@ hasharRoutes.get('/:id', async (c) => {
 
 // POST /api/hashars — multipart: title, description, address, lat, lng, date_time, items, photo?
 // v4: narx (settings.hashar_fee) > 0 bo'lsa hashar 'unpaid' — to'languncha ommaga ko'rinmaydi; javobda
-// `payment: {amount, payme_url?, click_url?, manual_note?}`. Narx 0 — darhol 'paid' (bepul).
+// `payment: {amount, payme_url?, click_url?, manual_note?, telegram?}`. Narx 0 — darhol 'paid' (bepul).
 // Narx > 0 da v4 dan eski mijoz (to'lov sahifasi yo'q) — 403 `app_update_required`, hech narsa yozilmaydi.
 hasharRoutes.post('/', requireVerifiedEmail, async (c) => {
   const user = c.get('user');

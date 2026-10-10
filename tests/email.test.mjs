@@ -49,7 +49,7 @@ test('GET /api/config → email_enabled: true (EMAIL_MOCK)', async () => {
   assert.equal(r.status, 200);
   assert.equal(r.data.email_enabled, true, 'server EMAIL_MOCK:1 bilan ishga tushirilsin');
   // v4 maydonlari (batafsil — tests/payments.suite.mjs)
-  assert.deepEqual(Object.keys(r.data).sort(), ['email_enabled', 'hashar_fee', 'manual_payment_note', 'payments']);
+  assert.deepEqual(Object.keys(r.data).sort(), ['email_enabled', 'hashar_fee', 'manual_payment_note', 'payment_telegram', 'payments']);
   assert.equal(r.headers.get('cache-control'), 'no-store');
 });
 
@@ -723,12 +723,13 @@ describe("Email xizmati o'chiq (RESEND_API_KEY yo'q, EMAIL_MOCK emas)", () => {
   test("config false; eski ro'yxat ishlaydi; email marshrutlari 503; yozuvchi amallar cheklanmaydi", async () => {
     assert.notEqual(url, BASE);
     const cfg = await call('/api/config');
-    // v4: narx standart 5000 so'm; to'lov kalitlari yo'q — faqat qo'lda to'lov
+    // v4: narx standart 5000 so'm; to'lov kalitlari yo'q — faqat qo'lda to'lov (standart Telegram admin orqali)
     assert.deepEqual(cfg.data, {
       email_enabled: false,
       hashar_fee: 5000,
       payments: { payme: false, click: false, manual: true },
       manual_payment_note: '',
+      payment_telegram: 'developer_alii',
     });
 
     const phone = randomPhone();
@@ -761,9 +762,9 @@ describe("Email xizmati o'chiq (RESEND_API_KEY yo'q, EMAIL_MOCK emas)", () => {
     // Email tasdiqlanmagan bo'lsa ham hashar yaratish va izoh yozish mumkin (qoida faqat email yoqilganda)
     const h = await call('/api/hashars', { method: 'POST', token: reg.data.token, form: hasharForm() });
     assert.equal(h.status, 201, JSON.stringify(h.data));
-    // v4: standart narx — hashar to'languncha e'lon qilinmaydi; provayderlar sozlanmagan → havolalar yo'q
+    // v4: standart narx — hashar to'languncha e'lon qilinmaydi; provayderlar sozlanmagan → havolalar yo'q, Telegram admin standart
     assert.equal(h.data.payment_status, 'unpaid');
-    assert.deepEqual(h.data.payment, { amount: 5000 });
+    assert.deepEqual(h.data.payment, { amount: 5000, telegram: 'developer_alii' });
     assert.equal((await call(`/api/hashars/${h.data.id}`)).status, 404, "to'lanmagan hashar mehmonga ko'rinmaydi");
     // Kalitsiz Payme / Click callback'lari hech narsa qilmaydi
     const pm = await fetch(`${url}/api/payments/payme`, {

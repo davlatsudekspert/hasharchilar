@@ -28,7 +28,7 @@ import { Q } from '../lib/queries.js';
 import { goBack, navigate } from '../lib/router.js';
 import { invalidate, useApi } from '../lib/store.js';
 import { cx, formatDateLong, timeAgo } from '../lib/utils.js';
-import { openExternal } from '../native/browser.js';
+import { openApp, openExternal } from '../native/browser.js';
 
 /** Izohdagi karta raqami (16 raqam) — alohida nusxalash uchun. */
 const cardNumberIn = (s) => {
@@ -105,6 +105,26 @@ function PaidView({ hashar, amount, celebrate, waived, onShare }) {
   );
 }
 
+/** Telegram admin bilan suhbat havolasi (tayyor xabar bilan; eski Telegram ilovalari matnni e'tiborsiz qoldiradi). */
+function telegramUrl(username, id, hashar, amount) {
+  const title = hashar && hashar.title ? ` "${hashar.title}"` : '';
+  const text = `Assalomu alaykum! Hasharchilar: #${id}${title} hasharini e'lon qilish uchun ${formatSom(amount)} to'lamoqchiman.`;
+  return `https://t.me/${encodeURIComponent(username)}?text=${encodeURIComponent(text)}`;
+}
+
+/** Telegram belgisi (qog'oz samolyot). */
+function TelegramMark({ className, white = false }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      {!white && <circle cx="12" cy="12" r="12" fill="#229ED9" />}
+      <path
+        fill="#fff"
+        d="M5.5 11.7l10.9-4.2c.5-.2 1 .1.8.9l-1.9 8.8c-.1.6-.5.8-1 .5l-2.8-2.1-1.4 1.3c-.2.2-.3.3-.6.3l.2-2.9 5.3-4.8c.2-.2 0-.3-.3-.1l-6.5 4.1-2.8-.9c-.6-.2-.6-.6.1-.9z"
+      />
+    </svg>
+  );
+}
+
 export default function PaymentPage({ route }) {
   const id = route.params.id;
   const { user, ready } = useAuth();
@@ -164,11 +184,16 @@ export default function PaymentPage({ route }) {
   const openProvider = async (provider, url) => {
     haptic('medium');
     try {
-      await openExternal(url);
+      await (provider === 'telegram' ? openApp(url) : openExternal(url));
     } catch {
       window.open(url, '_blank', 'noopener');
     }
-    toast(`${PROVIDER_LABEL[provider]} sahifasi ochildi. To'lovdan so'ng shu yerga qayting.`, 'info');
+    toast(
+      provider === 'telegram'
+        ? "Telegram ochildi. Administrator tasdiqlagach hashar o'zi e'lon qilinadi."
+        : `${PROVIDER_LABEL[provider]} sahifasi ochildi. To'lovdan so'ng shu yerga qayting.`,
+      'info',
+    );
   };
   const copy = async (text, what) => {
     if (await copyText(text)) {
@@ -197,6 +222,7 @@ export default function PaymentPage({ route }) {
     body = <PaidView hashar={hashar || { id }} amount={info.status === 'paid' ? paidAmountOf(info) : null} celebrate={celebrate} waived={info.status === 'waived'} onShare={() => hashar && actions.share(hashar)} />;
   } else if (info) {
     const note = info.manual_note || '';
+    const tg = info.telegram || '';
     const card = cardNumberIn(note);
     const providers = [info.payme_url && ['payme', info.payme_url], info.click_url && ['click', info.click_url]].filter(Boolean);
     const history = Array.isArray(info.history) ? info.history : [];
@@ -271,10 +297,50 @@ export default function PaymentPage({ route }) {
           </section>
         )}
 
-        {!free && (
+        {!free && tg && (
+          <section className="overflow-hidden rounded-3xl border border-line bg-surface shadow-soft" data-testid="telegram-payment">
+            <div className="p-5">
+              <h2 className="flex items-center gap-2 text-base font-extrabold text-ink">
+                <TelegramMark className="h-6 w-6" /> Telegram orqali to'lash
+              </h2>
+              <ol className="mt-3 space-y-2.5 text-sm leading-relaxed text-ink-2">
+                {[
+                  <>
+                    Administrator <b className="text-ink">@{tg}</b> ga Telegram'da yozing (xabar tayyor).
+                  </>,
+                  <>
+                    U yuborgan karta raqamiga <b className="text-ink tabular">{formatSom(info.amount)}</b> o'tkazing va chekni yuboring.
+                  </>,
+                  <>Administrator tasdiqlagach hasharingiz avtomatik e'lon qilinadi — sizga bildirishnoma keladi.</>,
+                ].map((t, i) => (
+                  <li key={i} className="flex gap-3">
+                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-soft text-xs font-extrabold text-brand">{i + 1}</span>
+                    <span className="min-w-0">{t}</span>
+                  </li>
+                ))}
+              </ol>
+              <button
+                type="button"
+                onClick={() => openProvider('telegram', telegramUrl(tg, id, hashar, info.amount))}
+                className="press mt-4 flex h-14 w-full items-center justify-center gap-2.5 rounded-2xl bg-[#229ED9] px-5 text-base font-extrabold text-white shadow-lg shadow-sky-500/25 transition hover:bg-[#1c8fc5]"
+                data-testid="telegram-pay"
+              >
+                <TelegramMark className="h-6 w-6" white /> @{tg} ga yozish
+              </button>
+              <p className="mt-3 flex gap-2 text-xs text-ink-3">
+                <InfoIcon className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Xabarda hashar raqami bo'ladi: <b className="text-ink">#{id}</b>. Telegram ochilmasa, @{tg} ni qidiruvdan toping.
+                </span>
+              </p>
+            </div>
+          </section>
+        )}
+
+        {!free && (note || !tg) && (
           <section className="rounded-3xl border border-line bg-surface p-5 shadow-soft" data-testid="manual-payment">
             <h2 className="flex items-center gap-2 text-base font-extrabold text-ink">
-              <WalletIcon className="h-5 w-5 text-brand" /> {providers.length ? "Yoki qo'lda to'lash" : "To'lov usuli"}
+              <WalletIcon className="h-5 w-5 text-brand" /> {providers.length || tg ? "Qo'shimcha ma'lumot" : "To'lov usuli"}
             </h2>
             {note ? (
               <>

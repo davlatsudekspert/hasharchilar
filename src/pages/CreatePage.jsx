@@ -598,7 +598,7 @@ export default function CreatePage() {
                   <div className="min-w-0 text-sm">
                     <p className="font-extrabold text-amber-950 dark:text-amber-100">E'lon narxi — {formatSom(fee)}</p>
                     <p className="mt-0.5 text-amber-900/80 dark:text-amber-200/80">
-                      "E'lon qilish" dan keyin to'lov sahifasi ochiladi (Payme, Click yoki qo'lda). To'lovgacha hasharni faqat siz ko'rasiz.
+                      "E'lon qilish" dan keyin to'lov sahifasi ochiladi (Telegram orqali admin tasdiqlaydi). To'lovgacha hasharni faqat siz ko'rasiz.
                     </p>
                   </div>
                 </div>

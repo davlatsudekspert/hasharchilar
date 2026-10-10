@@ -1,5 +1,5 @@
 // Server sozlamalari (GET /api/config): `email_enabled` — email bilan ro'yxat yoqilganmi; v4: `hashar_fee` (so'm,
-// 0 — bepul), `payments: {payme, click, manual}` (qaysi to'lov usullari yoqilgan), `manual_payment_note`.
+// 0 — bepul), `payments: {payme, click, manual}` (qaysi to'lov usullari yoqilgan), `manual_payment_note`, `payment_telegram`.
 // Ilova ochilganda bir marta so'raladi va localStorage'da saqlanadi (oflayn / sekin tarmoqda ham oxirgi ma'lum
 // qiymat bilan ishlaydi). Eski server (marshrut yo'q) — email o'chiq, narx 0 hisoblanadi.
 import { useSyncExternalStore } from 'react';
@@ -17,6 +17,7 @@ function normalize(c) {
     hashar_fee: Number.isFinite(fee) && fee > 0 ? Math.round(fee) : 0,
     payments: { payme: Boolean(p.payme), click: Boolean(p.click), manual: p.manual !== false },
     manual_payment_note: (c && typeof c.manual_payment_note === 'string' && c.manual_payment_note) || '',
+    payment_telegram: (c && typeof c.payment_telegram === 'string' && c.payment_telegram) || '',
   };
 }
 

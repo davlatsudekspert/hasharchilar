@@ -86,6 +86,7 @@ app.get('/api/config', async (c) => {
     hashar_fee: s.hashar_fee,
     payments: providersOf(c.env),
     manual_payment_note: s.manual_payment_note,
+    payment_telegram: s.payment_telegram,
   });
 });
 app.get('/api/stats', getStats);

@@ -31,6 +31,7 @@ export default function SettingsTab() {
   const [error, setError] = useState(null);
   const [fee, setFee] = useState('');
   const [note, setNote] = useState('');
+  const [tg, setTg] = useState('');
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState('');
 
@@ -42,6 +43,7 @@ export default function SettingsTab() {
         setData(d);
         setFee(String(d.hashar_fee ?? 0));
         setNote(d.manual_payment_note || '');
+        setTg(d.payment_telegram || '');
       })
       .catch(setError);
   };
@@ -57,10 +59,11 @@ export default function SettingsTab() {
     setBusy(true);
     setFormError('');
     try {
-      const d = await api.admin.saveSettings({ hashar_fee: n, manual_payment_note: note.trim() });
+      const d = await api.admin.saveSettings({ hashar_fee: n, manual_payment_note: note.trim(), payment_telegram: tg.trim() });
       setData(d);
       setFee(String(d.hashar_fee));
       setNote(d.manual_payment_note || '');
+      setTg(d.payment_telegram || '');
       loadServerConfig(); // yaratish sahifasidagi narx darhol yangilansin
       toast('Sozlamalar saqlandi');
     } catch (err) {
@@ -73,7 +76,8 @@ export default function SettingsTab() {
   if (error) return <ErrorState message={error.message} onRetry={load} />;
   if (!data) return <RowsSkeleton rows={3} h="h-28" />;
 
-  const dirty = String(data.hashar_fee) !== fee || (data.manual_payment_note || '') !== note;
+  const dirty =
+    String(data.hashar_fee) !== fee || (data.manual_payment_note || '') !== note || (data.payment_telegram || '') !== tg;
   const p = data.payments || {};
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
@@ -109,6 +113,26 @@ export default function SettingsTab() {
           ))}
         </div>
 
+        <label htmlFor="s-tg" className={cx(labelCls, 'mt-6')}>
+          To'lov uchun Telegram admin
+        </label>
+        <div className="relative">
+          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-400">@</span>
+          <input
+            id="s-tg"
+            className={cx(inputCls, 'pl-9 font-semibold')}
+            value={tg}
+            maxLength={40}
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            onChange={(e) => setTg(e.target.value.replace(/\s/g, '').replace(/^@/, ''))}
+            placeholder="developer_alii"
+            data-testid="settings-telegram"
+          />
+        </div>
+        <p className="mt-1 text-xs text-slate-500">To'lov sahifasida "Telegram orqali to'lash" tugmasi shu adminga yozadi. Bo'sh — tugma ko'rinmaydi.</p>
+
         <label htmlFor="s-note" className={cx(labelCls, 'mt-6')}>
           Qo'lda to'lov izohi
         </label>
@@ -141,6 +165,7 @@ export default function SettingsTab() {
         <ul className="mt-1 divide-y divide-slate-100">
           <ProviderRow name="Payme" on={!!p.payme} hint={data.payme_test_mode ? 'Sinov rejimi (test.paycom.uz)' : 'PAYME_MERCHANT_ID, PAYME_KEY'} />
           <ProviderRow name="Click" on={!!p.click} hint="CLICK_SERVICE_ID, CLICK_MERCHANT_ID, CLICK_SECRET_KEY" />
+          <ProviderRow name="Telegram orqali (admin tasdiqlaydi)" on={!!data.payment_telegram} hint={data.payment_telegram ? `@${data.payment_telegram} · To'lovlar → Kutilayotganlar` : "Telegram username kiriting"} />
           <ProviderRow name="Qo'lda (admin tasdiqlaydi)" on={p.manual !== false} hint="To'lovlar → Kutilayotganlar" />
         </ul>
         <p className="mt-3 flex gap-2 rounded-xl bg-slate-50 p-3 text-xs leading-relaxed text-slate-600">

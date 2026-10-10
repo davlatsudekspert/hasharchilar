@@ -8,7 +8,7 @@ import { deletePhotos } from './media.js';
 import { notifyOwnerStmt } from './notify.js';
 import { PAID_SQL, paymeConfig, providersOf } from './payconfig.js';
 import { paymentDto, waiveStmts } from './payledger.js';
-import { getSettings, parseFee, parseNote, setSettingStmt } from './settings.js';
+import { getSettings, parseFee, parseNote, parseTelegram, setSettingStmt } from './settings.js';
 import { deleteComment } from './social.js';
 import {
   ConflictError,
@@ -316,15 +316,17 @@ async function settingsResponse(c) {
   return {
     hashar_fee: s.hashar_fee,
     manual_payment_note: s.manual_payment_note,
+    payment_telegram: s.payment_telegram,
     payments: providersOf(c.env),
     payme_test_mode: paymeConfig(c.env).testMode,
   };
 }
 
-// GET /api/admin/settings → {hashar_fee, manual_payment_note, payments: {payme, click, manual}, payme_test_mode}
+// GET /api/admin/settings → {hashar_fee, manual_payment_note, payment_telegram, payments: {payme, click, manual}, payme_test_mode}
 adminRoutes.get('/settings', async (c) => c.json(await settingsResponse(c)));
 
-// POST /api/admin/settings — {hashar_fee?: so'm (0 — bepul), manual_payment_note?: ≤ 500 belgi} → sozlamalar.
+// POST /api/admin/settings — {hashar_fee?: so'm (0 — bepul), manual_payment_note?: ≤ 500 belgi,
+// payment_telegram?: username yoki ''} → sozlamalar.
 // Narx o'zgarishi faqat yangi hasharlar va keyingi to'lovlarga ta'sir qiladi (to'lanmaganlar ommaviy e'lon qilinmaydi —
 // spam himoyasi; narx 0 bo'lsa egasi to'lov sahifasini ochganda o'zi bepul e'lon qilinadi — worker/payments.js,
 // yoki admin mark-paid {waive: true} bilan e'lon qiladi).
@@ -336,7 +338,10 @@ adminRoutes.post('/settings', async (c) => {
   if (body.manual_payment_note !== undefined) {
     stmts.push(setSettingStmt(db, 'manual_payment_note', parseNote(body.manual_payment_note, "Qo'lda to'lov izohi")));
   }
-  if (!stmts.length) throw new ValidationError("O'zgartirish uchun hashar_fee yoki manual_payment_note yuboring");
+  if (body.payment_telegram !== undefined) {
+    stmts.push(setSettingStmt(db, 'payment_telegram', parseTelegram(body.payment_telegram, "To'lov uchun Telegram")));
+  }
+  if (!stmts.length) throw new ValidationError("O'zgartirish uchun hashar_fee, manual_payment_note yoki payment_telegram yuboring");
   await db.batch(stmts);
   return c.json(await settingsResponse(c));
 });

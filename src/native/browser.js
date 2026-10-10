@@ -35,6 +35,22 @@ export async function openExternal(url) {
   await (await browserMod()).Browser.open({ url: href, toolbarColor: toolbarColor(), presentationStyle: 'fullscreen' });
 }
 
+/**
+ * Boshqa ilovada ochiladigan havola (masalan t.me → Telegram ilovasi). APK: WebView'ning tashqi navigatsiyasi —
+ * Capacitor ilova domenidan tashqari havolani Android intent bilan ochadi (Telegram bo'lsa — ilovada, bo'lmasa brauzerda);
+ * sayt: yangi oyna.
+ */
+export async function openApp(url) {
+  const href = String(url || '');
+  if (!/^https:\/\//i.test(href)) throw new Error("Noto'g'ri havola");
+  if (!IS_NATIVE) {
+    window.open(href, '_blank', 'noopener');
+    return;
+  }
+  await markExternal();
+  window.location.href = href;
+}
+
 /** Ochiq Custom Tab'ni yopadi (APK). */
 export async function closeExternal() {
   if (!IS_NATIVE) return;

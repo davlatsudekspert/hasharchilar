@@ -162,6 +162,7 @@ describe("v4: hashar narxi, sozlamalar va to'lanmagan hasharning ko'rinishi", ()
     assert.equal(r.status, 200);
     assert.equal(r.data.hashar_fee, FEE);
     assert.equal(r.data.manual_payment_note, NOTE);
+    assert.equal(r.data.payment_telegram, 'developer_alii'); // standart
     assert.deepEqual(Object.keys(r.data.payments).sort(), ['click', 'manual', 'payme']);
     assert.equal(r.data.payments.manual, true);
     for (const k of ['payme', 'click']) assert.equal(typeof r.data.payments[k], 'boolean');
@@ -174,12 +175,13 @@ describe("v4: hashar narxi, sozlamalar va to'lanmagan hasharning ko'rinishi", ()
     }
     const g = await api('/api/admin/settings', { token: admin.token });
     assert.equal(g.status, 200);
-    assert.deepEqual(Object.keys(g.data).sort(), ['hashar_fee', 'manual_payment_note', 'payme_test_mode', 'payments']);
+    assert.deepEqual(Object.keys(g.data).sort(), ['hashar_fee', 'manual_payment_note', 'payme_test_mode', 'payment_telegram', 'payments']);
     assert.equal(g.data.hashar_fee, FEE);
     assert.equal(g.data.manual_payment_note, NOTE);
     assert.ok(!/checkin_secret|secret/i.test(JSON.stringify(g.data)));
     for (const bad of [{}, { hashar_fee: -1 }, { hashar_fee: 1.5 }, { hashar_fee: 'abc' }, { hashar_fee: 10_000_001 }, { hashar_fee: null },
-      { manual_payment_note: 'x'.repeat(501) }, { manual_payment_note: 5 }]) {
+      { manual_payment_note: 'x'.repeat(501) }, { manual_payment_note: 5 },
+      { payment_telegram: 'ab' }, { payment_telegram: 'bad name' }, { payment_telegram: '1abcdef' }, { payment_telegram: 5 }]) {
       const r = await api('/api/admin/settings', { method: 'POST', token: admin.token, json: bad });
       assert.equal(r.status, 400, JSON.stringify(bad));
       assert.equal(typeof r.data.error, 'string');
@@ -190,6 +192,14 @@ describe("v4: hashar narxi, sozlamalar va to'lanmagan hasharning ko'rinishi", ()
     assert.equal(s.data.hashar_fee, 7000);
     assert.equal(s.data.manual_payment_note, 'й'.repeat(500));
     assert.equal((await get('/api/config')).data.hashar_fee, 7000);
+    // Telegram: @ va t.me/ havolasi tozalanadi; bo'sh — o'chiq
+    for (const [inp, out] of [['@Some_Admin1', 'Some_Admin1'], ['https://t.me/other_admin', 'other_admin'], ['', '']]) {
+      const t = await api('/api/admin/settings', { method: 'POST', token: admin.token, json: { payment_telegram: inp } });
+      assert.equal(t.status, 200, JSON.stringify(t.data));
+      assert.equal(t.data.payment_telegram, out);
+      assert.equal((await get('/api/config')).data.payment_telegram, out);
+    }
+    await api('/api/admin/settings', { method: 'POST', token: admin.token, json: { payment_telegram: 'developer_alii' } });
     await setFee(FEE, { manual_payment_note: NOTE });
   });
 
@@ -199,6 +209,7 @@ describe("v4: hashar narxi, sozlamalar va to'lanmagan hasharning ko'rinishi", ()
     assert.equal(h.is_owner, true);
     assert.equal(h.payment.amount, FEE);
     assert.equal(h.payment.manual_note, NOTE);
+    assert.equal(h.payment.telegram, 'developer_alii');
     const back = `${BASE}/#/hashar/${h.id}?tolov=1`;
     if (!NO_PAYME) {
       const m = /^https:\/\/(checkout|test)\.paycom\.uz\/([A-Za-z0-9+/=]+)$/.exec(h.payment.payme_url);
@@ -290,6 +301,7 @@ describe("v4: hashar narxi, sozlamalar va to'lanmagan hasharning ko'rinishi", ()
       assert.equal(r.data.amount, FEE);
       assert.equal(r.data.currency, 'UZS');
       assert.equal(r.data.manual_note, NOTE);
+      assert.equal(r.data.telegram, 'developer_alii');
       assert.deepEqual(r.data.providers, CONFIG.payments);
       assert.equal(r.data.payme_url, h.payment.payme_url);
       assert.equal(r.data.click_url, h.payment.click_url);
