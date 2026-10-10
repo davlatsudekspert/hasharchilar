@@ -376,6 +376,51 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "APK: $SIZE bayt, sha256=$SHA, sertifikat SHA-256=$FP"
 
+      # Google Play uchun .aab: xuddi shu kod va kalit (Play Console'da "upload key"), lekin VITE_PLAY=1 —
+      # ilova ichida saytdagi APK'ga yangilanish taklifi yo'q (Play qoidasi). Saytga joylanmaydi:
+      # faqat artefakt va GitHub Release. APK out/ ga oldin nusxalangan — qayta build unga ta'sir qilmaydi.
+      - name: Google Play AAB (bundleRelease)
+        env:
+          VITE_API_BASE: ${{ steps.url.outputs.url }}
+          VITE_PLAY: '1'
+          APK_FP: ${{ steps.apk.outputs.fingerprint }}
+        run: |
+          set -euo pipefail
+          npm run build
+          npx cap sync android
+          (cd android && ./gradlew bundleRelease --no-daemon --stacktrace "-PversionCode=${VERSION_CODE}" "-PversionName=${VERSION_NAME}")
+          SRC=android/app/build/outputs/bundle/release/app-release.aab
+          test -f "$SRC" || { echo "::error::AAB topilmadi: $SRC"; exit 1; }
+          mkdir -p out-play
+          cp "$SRC" "out-play/hasharchilar-${VERSION_NAME}.aab"
+          # Imzo: jarsigner (AAB — JAR imzosi); sertifikat APK bilan bir xil bo'lishi shart (upload key)
+          jarsigner -verify -certs "out-play/hasharchilar-${VERSION_NAME}.aab" > "$RUNNER_TEMP/aab-sig.txt" 2>&1 \
+            || { tail -20 "$RUNNER_TEMP/aab-sig.txt"; echo "::error::AAB imzosi tekshiruvdan o'tmadi"; exit 1; }
+          grep -q "jar verified" "$RUNNER_TEMP/aab-sig.txt" || { tail -20 "$RUNNER_TEMP/aab-sig.txt"; echo "::error::AAB imzolanmagan"; exit 1; }
+          keytool -printcert -jarfile "out-play/hasharchilar-${VERSION_NAME}.aab" > "$RUNNER_TEMP/aab-cert.txt" 2>&1 || true
+          grep -m1 -E '^[[:space:]]*SHA256:' "$RUNNER_TEMP/aab-cert.txt" | awk '{print $2}' | tr -d ':' | tr 'A-F' 'a-f' > "$RUNNER_TEMP/aab-fp.txt" || true
+          AAB_FP=$(cat "$RUNNER_TEMP/aab-fp.txt")
+          if [ "$AAB_FP" != "$APK_FP" ]; then
+            echo "::error::AAB sertifikati (${AAB_FP:-?}) APK nikidan (${APK_FP}) farq qiladi"; exit 1
+          fi
+          # Play talabi: 16 KB sahifali qurilmalar uchun .so tekislanishi (APK bo'yicha tekshiruv, ogohlantirish)
+          BT=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          if "$BT/zipalign" -c -P 16 -v 4 out/hasharchilar.apk > "$RUNNER_TEMP/align.txt" 2>&1; then
+            echo "✓ 16 KB tekislanish: OK"
+          else
+            echo "::warning title=16 KB::Ba'zi .so fayllar 16 KB ga tekislanmagan — Play ogohlantirishi mumkin"; grep -i 'lib/.*BAD' "$RUNNER_TEMP/align.txt" | head -10 || true
+          fi
+          ls -l out-play
+          echo "AAB: $(stat -c %s "out-play/hasharchilar-${VERSION_NAME}.aab") bayt, sertifikat SHA-256=${AAB_FP}"
+
+      - name: AAB artefakti
+        uses: actions/upload-artifact@v4
+        with:
+          name: hasharchilar-aab
+          path: out-play/*.aab
+          if-no-files-found: error
+          retention-days: 90
+
       # Kalit o'zgarsa (boshqa branch, kesh o'chgani, secret almashgani) o'rnatilgan ilovalar yangilanmaydi
       # ("App not installed"). Shuning uchun HOZIR saytda turgan APK sertifikati bilan solishtiramiz
       # (ochiq fayl, token kerak emas). 404 yoki HTML (SPA: fayl yo'q) — birinchi chiqarish.
@@ -1046,6 +1091,11 @@ jobs:
           name: hasharchilar-apk
           path: apk
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: hasharchilar-aab
+          path: aab
+
       - name: GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -1083,10 +1133,13 @@ jobs:
           # "Latest" belgisi nfcstore relizlarida qoladi; main bo'lmagan branch — prerelease
           FLAGS=(--latest=false)
           if [ "$BRANCH" != "main" ]; then FLAGS+=(--prerelease); fi
+          AAB="aab/hasharchilar-${VERSION_NAME}.aab"
+          test -f "$AAB" || { echo "::error::AAB artefakti topilmadi: $AAB"; exit 1; }
+          echo "- Google Play uchun: \`hasharchilar-${VERSION_NAME}.aab\` (Play Console → Release → App bundle)" >> "$RUNNER_TEMP/notes.md"
           if gh release view "$TAG" --repo "$REPO" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$APK" --repo "$REPO" --clobber
+            gh release upload "$TAG" "$APK" "$AAB" --repo "$REPO" --clobber
           else
-            gh release create "$TAG" "$APK" --repo "$REPO" --target "$SHA" \
+            gh release create "$TAG" "$APK" "$AAB" --repo "$REPO" --target "$SHA" \
               --title "Hasharchilar ${VERSION_NAME}" --notes-file "$RUNNER_TEMP/notes.md" "${FLAGS[@]}"
           fi
           {
@@ -1094,4 +1147,5 @@ jobs:
             echo ""
             echo "- https://github.com/${REPO}/releases/tag/${TAG}"
             echo "- To'g'ridan-to'g'ri: https://github.com/${REPO}/releases/download/${TAG}/hasharchilar-${VERSION_NAME}.apk"
+            echo "- Google Play AAB: https://github.com/${REPO}/releases/download/${TAG}/hasharchilar-${VERSION_NAME}.aab"
           } >> "$GITHUB_STEP_SUMMARY"

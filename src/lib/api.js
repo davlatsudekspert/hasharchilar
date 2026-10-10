@@ -194,6 +194,8 @@ export const api = {
   updateProfile: (form) => request('/me/profile', { method: 'POST', form }),
   changePassword: (current_password, new_password) =>
     request('/me/password', { method: 'POST', json: { current_password, new_password }, keepSession: true }),
+  // Hisobni butunlay o'chirish (parol bilan tasdiqlanadi); 401 — parol noto'g'ri, sessiya saqlanadi
+  deleteAccount: (password) => request('/me/delete', { method: 'POST', json: { password }, keepSession: true }),
   leaderboard: (period = 'all') => request(`/leaderboard${qs({ period })}`),
 
   // Saqlanganlar (xatcho'p)

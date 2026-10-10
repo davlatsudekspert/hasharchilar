@@ -21,14 +21,16 @@ import {
   WalletIcon,
   PlusIcon,
   SettingsIcon,
+  TrashIcon,
   ShareIcon,
   ShieldIcon,
   TrophyIcon,
   UserIcon,
 } from '../components/icons.jsx';
-import { BadgesGrid, ChangePasswordForm, EditProfileModal, ProfileHero } from '../components/ProfileParts.jsx';
+import { BadgesGrid, ChangePasswordForm, DeleteAccountModal, EditProfileModal, ProfileHero } from '../components/ProfileParts.jsx';
 import { AccentPicker, ThemePicker, ThemePreview } from '../components/AppearancePicker.jsx';
 import LockSettings from '../lock/LockSettings.jsx';
+import { clearLock } from '../lock/lockStore.js';
 import { remindersSupported, setRemindersEnabled, useRemindersEnabled } from '../lib/reminders.js';
 import { useToast } from '../components/Toast.jsx';
 import { btn, CardSkeleton, EmptyState, ErrorState, Link, Segmented, Spinner } from '../components/ui.jsx';
@@ -327,12 +329,21 @@ function Settings({ onEdit, appInfo }) {
   const { user, logout } = useAuth();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const doLogout = async () => {
     setBusy(true);
     await logout();
     clearCache();
     haptic('medium');
     toast('Tizimdan chiqdingiz', 'info');
+    navigate('/', { replace: true });
+  };
+  // Hisob o'chirilgach: lokal sessiya + kesh (logout) va ilova qulfi PIN'i ("PIN ni unutdim" kabi) tozalanadi
+  const onAccountDeleted = async () => {
+    await logout();
+    clearCache();
+    await clearLock();
+    toast("Hisobingiz o'chirildi");
     navigate('/', { replace: true });
   };
   const shareApp = async () => {
@@ -383,7 +394,9 @@ function Settings({ onEdit, appInfo }) {
         <SettingsRow icon={LogOutIcon} title="Chiqish" danger onClick={doLogout}>
           {busy ? <Spinner className="text-red-600" /> : null}
         </SettingsRow>
+        <SettingsRow icon={TrashIcon} title="Hisobni o'chirish" text="Hisob va barcha ma'lumotlar butunlay o'chadi" danger onClick={() => setDeleting(true)} />
       </section>
+      {deleting && <DeleteAccountModal onClose={() => setDeleting(false)} onDeleted={onAccountDeleted} />}
     </div>
   );
 }

@@ -17,6 +17,12 @@ export const IS_NATIVE = (() => {
 })();
 
 /**
+ * Google Play uchun build (`VITE_PLAY=1`, CI → .aab): ilova yangilanishini Play o'zi qiladi —
+ * APK'ni saytdan yangilash taklifi ko'rsatilmaydi (Play qoidasi: ilova o'zini Play'dan tashqarida yangilamaydi).
+ */
+export const IS_PLAY = import.meta.env.VITE_PLAY === '1';
+
+/**
  * Media yo'lini to'liq URL ga aylantiradi.
  * - `http(s)://`, `blob:`, `data:` — o'zgarishsiz;
  * - `/demo/...` — statik web fayl (APK ichida ham lokal ochiladi);

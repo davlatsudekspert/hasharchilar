@@ -447,4 +447,60 @@ export function ChangePasswordForm() {
   );
 }
 
+/**
+ * Hisobni o'chirish oynasi (POST /api/me/delete). Parol bilan tasdiqlanadi; muvaffaqiyatda lokal sessiya,
+ * kesh va (APK'da) ilova qulfi PIN'i tozalanadi. 401 — parol noto'g'ri, sessiya saqlanadi.
+ */
+export function DeleteAccountModal({ onClose, onDeleted }) {
+  const [pw, setPw] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!pw) return setError('Parolni kiriting');
+    setError('');
+    setBusy(true);
+    try {
+      await api.deleteAccount(pw);
+      haptic('success');
+      await onDeleted();
+    } catch (err) {
+      setError(err.status === 401 ? "Parol noto'g'ri" : err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title="Hisobni o'chirish"
+      onClose={busy ? () => {} : onClose}
+      autoFocus={false}
+      footer={
+        <div className="flex gap-3">
+          <button type="button" onClick={onClose} disabled={busy} className={cx(btn.ghost, 'h-12 px-5')}>
+            Bekor
+          </button>
+          <button type="submit" form="delete-account-form" disabled={busy} className={cx(btn.danger, 'h-12 flex-1')} data-testid="delete-account-confirm">
+            {busy ? <Spinner /> : <TrashIcon className="h-5 w-5" />} Hisobni o'chirish
+          </button>
+        </div>
+      }
+    >
+      <form id="delete-account-form" onSubmit={submit} className="space-y-4" noValidate>
+        <p className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium leading-relaxed text-red-700 dark:bg-red-500/10 dark:text-red-300">
+          Bu amalni qaytarib bo'lmaydi. Quyidagilar butunlay o'chiriladi:
+        </p>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-ink-2">
+          <li>profilingiz (ism, rasm, telefon, email);</li>
+          <li>siz e'lon qilgan hasharlar va ularning rasmlari;</li>
+          <li>sizning izohlaringiz;</li>
+          <li>hasharlardagi qatnashuvlaringiz va saqlanganlaringiz.</li>
+        </ul>
+        <PasswordField id="del-pw" label="Tasdiqlash uchun parolingiz" value={pw} onChange={setPw} error={error} autoComplete="current-password" />
+      </form>
+    </Modal>
+  );
+}
+
 export { EditIcon };

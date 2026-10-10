@@ -553,6 +553,47 @@ authRoutes.post('/me/password', requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
+// POST /api/me/delete — {password} → {ok: true}. Hisobni va barcha ma'lumotlarini butunlay o'chiradi
+// (Google Play: hisobni o'chirish talabi). Parol tekshiruvi /me/password bilan bir xil limitlar ostida.
+// DB'dagi hamma narsa bitta tranzaksiyada (admin DELETE /users/:id bilan bir xil); R2 rasmlari undan keyin,
+// xato bo'lsa log'ga yoziladi. To'lovlar (payments) qoladi — moliyaviy yozuv.
+authRoutes.post('/me/delete', requireAuth, async (c) => {
+  const user = c.get('user');
+  const db = c.env.DB;
+  await limitAuth(c);
+  const body = await readJson(c);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (!password) throw new ValidationError('Parolni kiriting');
+  await limitLoginPhone(c, user.phone);
+
+  const row = await db.prepare('SELECT password_hash FROM users WHERE id = ?1').bind(user.id).first();
+  const ok = row && (await verifyPassword(password.slice(0, PASSWORD_MAX + 1), row.password_hash));
+  if (!ok || password.length > PASSWORD_MAX) throw new AuthError("Parol noto'g'ri");
+
+  const id = user.id;
+  const own = 'SELECT id FROM hashars WHERE creator_id = ?1';
+  const [media, , , , , , , , , delUser] = await db.batch([
+    db
+      .prepare(
+        `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
+         UNION ALL SELECT avatar_key FROM users WHERE id = ?1 AND avatar_key IS NOT NULL`,
+      )
+      .bind(id),
+    db.prepare(`DELETE FROM saves WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
+    db.prepare(`DELETE FROM notifications WHERE hashar_id IN (${own}) OR user_id = ?1 OR actor_id = ?1`).bind(id),
+    db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
+    db.prepare('DELETE FROM email_otps WHERE user_id = ?1 OR email = (SELECT email FROM users WHERE id = ?1)').bind(id),
+    db.prepare(`DELETE FROM comments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
+    db.prepare(`DELETE FROM hashar_media WHERE hashar_id IN (${own})`).bind(id),
+    db.prepare(`DELETE FROM volunteers WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
+    db.prepare('DELETE FROM hashars WHERE creator_id = ?1').bind(id),
+    db.prepare('DELETE FROM users WHERE id = ?1').bind(id),
+  ]);
+  if (delUser.meta.changes !== 1) throw new AuthError('Hisob topilmadi');
+  await deletePhotos(c.env.PHOTOS, media.results.map((m) => m.r2_key));
+  return c.json({ ok: true });
+});
+
 // POST /api/me/email/start — {email} → tasdiqlash kodi shu emailga ({ok, email, expires_in, resend_in}, + dev_code
 // faqat EMAIL_MOCK=1). Email boshqa hisobda bo'lsa — 409. Kod shu foydalanuvchiga bog'lanadi.
 authRoutes.post('/me/email/start', requireAuth, async (c) => {

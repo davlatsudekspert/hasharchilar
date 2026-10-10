@@ -1273,3 +1273,4 @@ describe('v3: geo proksi', () => {
 // ulanadi: to'lov (narx, ko'rinish, Payme, Click, qo'lda) va saqlanganlar / bildirishnomalar / QR davomat.
 await import('./payments.suite.mjs');
 await import('./v4.suite.mjs');
+await import('./account.suite.mjs');

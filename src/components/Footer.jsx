@@ -4,7 +4,7 @@ import { DownloadIcon, HeartIcon } from './icons.jsx';
 import Logo from './Logo.jsx';
 import { Link } from './ui.jsx';
 import { appDownloadUrl } from './AppBanner.jsx';
-import { IS_NATIVE } from '../lib/config.js';
+import { IS_NATIVE, SITE_URL } from '../lib/config.js';
 
 const COLS = [
   {
@@ -72,7 +72,16 @@ export default function Footer({ appInfo, className }) {
       </div>
       <div className="border-t border-line">
         <div className="mx-auto flex max-w-7xl flex-col gap-2 px-4 py-5 text-xs text-ink-3 sm:flex-row sm:items-center sm:justify-between lg:px-6">
-          <p>© {new Date().getFullYear()} hasharchilar.uz · Barcha huquqlar himoyalangan</p>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>© {new Date().getFullYear()} hasharchilar.uz · Barcha huquqlar himoyalangan</span>
+            {/* Statik sahifalar (SPA emas) — APK'da ham sayt manzili orqali ochiladi */}
+            <a href={`${SITE_URL}/privacy.html`} target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-brand">
+              Maxfiylik siyosati
+            </a>
+            <a href={`${SITE_URL}/delete-account.html`} target="_blank" rel="noopener noreferrer" className="font-semibold hover:text-brand">
+              Hisobni o'chirish
+            </a>
+          </p>
           <p className="inline-flex items-center gap-1.5">
             O'zbekistonda <HeartIcon className="h-3.5 w-3.5 fill-red-500 text-red-500" /> bilan yaratilgan
           </p>

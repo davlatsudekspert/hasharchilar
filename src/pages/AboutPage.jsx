@@ -4,6 +4,7 @@ import { ArrowRightIcon, CameraIcon, ChevronDownIcon, GlobeIcon, HandIcon, Heart
 import { btn, Link, SectionHeader } from '../components/ui.jsx';
 import { Q } from '../lib/queries.js';
 import { useApi } from '../lib/store.js';
+import { SITE_URL } from '../lib/config.js';
 import { cx } from '../lib/utils.js';
 
 const FAQ = [
@@ -119,6 +120,15 @@ export default function AboutPage() {
               Xaritani ochish <ArrowRightIcon className="h-4 w-4" />
             </Link>
           </div>
+          <p className="text-sm text-ink-3">
+            <a href={`${SITE_URL}/privacy.html`} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand hover:underline">
+              Maxfiylik siyosati
+            </a>
+            {' · '}
+            <a href={`${SITE_URL}/delete-account.html`} target="_blank" rel="noopener noreferrer" className="font-semibold text-brand hover:underline">
+              Hisobni o'chirish
+            </a>
+          </p>
         </div>
       </section>
     </div>
