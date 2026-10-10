@@ -420,6 +420,12 @@ INSERT INTO email_otps (email, purpose, user_id, code_hash, expires_at, created_
   VALUES ('aziz@example.com', 'reset', 1, 'abc', 2000, 1000);
 `;
 
+// 0006_reports dan keyin paydo bo'lgan jadvallar
+const EXTRA_ROWS_V6 = `
+INSERT INTO reports (reporter_id, target_type, target_id, reason, details) VALUES (2, 'hashar', 1, 'spam', 'reklama');
+INSERT INTO user_blocks (user_id, blocked_id) VALUES (1, 3);
+`;
+
 async function upgrade(server, body) {
   const res = await fetch(server.url, { method: 'POST', body: JSON.stringify({ target: 'upgrade', ...body }) });
   assert.equal(res.status, 200, await res.clone().text());
@@ -429,7 +435,8 @@ async function upgrade(server, body) {
 describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo'llanadi", () => {
   let dir;
   let server;
-  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
+  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4 + EXTRA_ROWS_V6;
+  const seedV5 = readFileSync(join(ROOT, 'tests/fixtures/seed-v5.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
   // Eski sxemalarga yozilgan namunalar: yangi migratsiyalar shu ma'lumot ustida sinaladi
   const seedV4 = readFileSync(join(ROOT, 'tests/fixtures/seed-v4.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
   const seedV3 = readFileSync(join(ROOT, 'tests/fixtures/seed-v3.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3;
@@ -449,13 +456,15 @@ describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo
   test("0001 dan keyin namuna ma'lumot → qolgan migratsiyalar birma-bir", async () => {
     // Har bir namuna u qo'llanadigan har bir bosqichdan boshlab sinaladi
     const migratedWithData = new Set();
-    // seed-v2.sql — faqat 0003 dan oldingi, seed-v3.sql — 0004 dan oldingi, seed-v4.sql — 0005 dan oldingi
+    // seed-v2.sql — faqat 0003 dan oldingi, seed-v3.sql — 0004 dan oldingi, seed-v4.sql — 0005 dan oldingi, seed-v5.sql — 0006 dan oldingi
     // bosqichlarda (keyin yangi jadvallar bo'sh qoladi)
     const v2Max = files.indexOf('0003_v3.sql');
     const v3Max = files.indexOf('0004_email.sql');
     const v4Max = files.indexOf('0005_v4.sql');
+    const v5Max = files.indexOf('0006_reports.sql');
     for (const [label, sql, maxK] of [
       ['seed.sql', seed, files.length],
+      ['seed-v5.sql', seedV5, v5Max],
       ['seed-v4.sql', seedV4, v4Max],
       ['seed-v3.sql', seedV3, v3Max],
       ['seed-v2.sql', seedV2, v2Max],

@@ -18,6 +18,7 @@ import {
   CheckIcon,
   ClockIcon,
   ExternalIcon,
+  FlagIcon,
   LogOutIcon,
   NavigationIcon,
   PackageIcon,
@@ -30,6 +31,7 @@ import {
 import { MiniMap } from '../components/map/index.jsx';
 import Modal from '../components/Modal.jsx';
 import PhotoInput from '../components/PhotoInput.jsx';
+import { useReport } from '../components/ReportSheet.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { Avatar, AvatarStack, btn, CategoryChip, EmptyState, ErrorState, ItemChips, Link, Progress, Spinner, StatusBadge } from '../components/ui.jsx';
 import { useActions } from '../lib/actions.jsx';
@@ -100,6 +102,7 @@ export default function HasharPage({ route }) {
   const id = route.params.id;
   const toast = useToast();
   const actions = useActions();
+  const [report, reportSheet] = useReport();
   const seed = (peek('hashars:all') || []).find((x) => x.id === id) || null;
   const d = useApi(...Q.hashar(id));
   const [mode, setMode] = useState(null); // null | 'complete' | 'delete'
@@ -386,6 +389,25 @@ export default function HasharPage({ route }) {
     </div>
   );
 
+  // Boshqaning hasharini shikoyat qilish (Google Play UGC talabi) + egasi bloklangan bo'lsa eslatma
+  const reportRow = !h.is_owner && (
+    <div className="mt-2">
+      {h.creator_blocked && (
+        <p className="mb-2 flex gap-2 rounded-2xl bg-surface-2 px-3.5 py-2.5 text-sm font-medium text-ink-2 ring-1 ring-line" data-testid="creator-blocked">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" /> Siz bu tashkilotchini bloklagansiz. Uning hasharlari ro'yxatlarda ko'rinmaydi.
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={() => report({ type: 'hashar', id: h.id, label: h.title })}
+        className="mx-auto flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-ink-3 transition hover:bg-surface-2 hover:text-red-600"
+        data-testid="report-hashar"
+      >
+        <FlagIcon className="h-3.5 w-3.5" /> Shikoyat qilish
+      </button>
+    </div>
+  );
+
   return (
     <div className="mx-auto max-w-7xl px-4 pb-28 pt-4 lg:px-6 lg:pb-16 lg:pt-8">
       {/* Navigatsiya */}
@@ -576,7 +598,10 @@ export default function HasharPage({ route }) {
               </p>
             )}
             <div className="hidden lg:block">{primaryActions}</div>
-            <div className="lg:mt-4">{quickLinks}</div>
+            <div className="lg:mt-4">
+              {quickLinks}
+              {reportRow}
+            </div>
             {actionError && !mode && (
               <p role="alert" className="mt-3 rounded-2xl bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300">
                 {actionError}
@@ -749,6 +774,7 @@ export default function HasharPage({ route }) {
           )}
         </Modal>
       )}
+      {reportSheet}
     </div>
   );
 }

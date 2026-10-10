@@ -1,9 +1,12 @@
 // Ommaviy profil (#/u/:id): avatar, bio, tuman, statistika, nishonlar, e'lon qilgan hasharlari. Telefon ko'rsatilmaydi.
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { HasharRow } from '../components/HasharCard.jsx';
-import { AlertIcon, ArrowLeftIcon, FlagIcon, MedalIcon } from '../components/icons.jsx';
+import { unblockUser, useBlockUser } from '../components/BlockParts.jsx';
+import { AlertIcon, ArrowLeftIcon, BanIcon, FlagIcon, MedalIcon } from '../components/icons.jsx';
 import { BadgesGrid, ProfileHero } from '../components/ProfileParts.jsx';
-import { btn, EmptyState, ErrorState, Link } from '../components/ui.jsx';
+import { useReport } from '../components/ReportSheet.jsx';
+import { useToast } from '../components/Toast.jsx';
+import { btn, EmptyState, ErrorState, Link, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { hideSplash } from '../lib/native.js';
 import { goBack, navigate } from '../lib/router.js';
@@ -15,6 +18,10 @@ export default function UserPage({ route }) {
   const id = route.params.id;
   const { user } = useAuth();
   const u = useApi(...Q.user(id));
+  const toast = useToast();
+  const [report, reportSheet] = useReport();
+  const [askBlock, blockModal] = useBlockUser();
+  const [unblocking, setUnblocking] = useState(false);
 
   useEffect(() => {
     if (!u.loading) hideSplash();
@@ -60,7 +67,32 @@ export default function UserPage({ route }) {
             <button type="button" onClick={() => navigate('/profil')} className={cx(btn.glass, 'h-10 px-4 text-sm')}>
               Mening profilim
             </button>
-          ) : null
+          ) : (
+            <div className="flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => report({ type: 'user', id: p.id, label: p.name })} className={cx(btn.glass, 'h-10 px-4 text-sm')} data-testid="report-user">
+                <FlagIcon className="h-4 w-4" /> Shikoyat qilish
+              </button>
+              {p.is_blocked ? (
+                <button
+                  type="button"
+                  disabled={unblocking}
+                  onClick={async () => {
+                    setUnblocking(true);
+                    await unblockUser(p, toast);
+                    setUnblocking(false);
+                  }}
+                  className={cx(btn.glass, 'h-10 px-4 text-sm')}
+                  data-testid="unblock-user"
+                >
+                  {unblocking ? <Spinner /> : <BanIcon className="h-4 w-4" />} Blokdan chiqarish
+                </button>
+              ) : (
+                <button type="button" onClick={() => askBlock(p)} className={cx(btn.glass, 'h-10 px-4 text-sm')} data-testid="block-user">
+                  <BanIcon className="h-4 w-4" /> Bloklash
+                </button>
+              )}
+            </div>
+          )
         }
       />
 
@@ -87,6 +119,8 @@ export default function UserPage({ route }) {
           </ul>
         )}
       </section>
+      {reportSheet}
+      {blockModal}
     </div>
   );
 }

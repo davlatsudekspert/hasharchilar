@@ -5,6 +5,7 @@ import { emailEnabled, isEmailMock, requireEmailService } from './email.js';
 import { checkOtpSend, consumeOtp, createAndSendOtp, CODE_EXPIRED, otpResponse, otpTimings } from './otp.js';
 import { limitAuth, limitLoginEmail, limitLoginPhone, limitProfile } from './ratelimit.js';
 import { avatarUrl, deletePhotos, readPhoto, storePhoto } from './media.js';
+import { purgeUserReportsStmts } from './reportstmts.js';
 import {
   AuthError,
   ConflictError,
@@ -572,13 +573,14 @@ authRoutes.post('/me/delete', requireAuth, async (c) => {
 
   const id = user.id;
   const own = 'SELECT id FROM hashars WHERE creator_id = ?1';
-  const [media, , , , , , , , , delUser] = await db.batch([
+  const res = await db.batch([
     db
       .prepare(
         `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
          UNION ALL SELECT avatar_key FROM users WHERE id = ?1 AND avatar_key IS NOT NULL`,
       )
       .bind(id),
+    ...purgeUserReportsStmts(db, id), // shikoyatlar va bloklar (izohlar o'chishidan oldin)
     db.prepare(`DELETE FROM saves WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare(`DELETE FROM notifications WHERE hashar_id IN (${own}) OR user_id = ?1 OR actor_id = ?1`).bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
@@ -589,6 +591,7 @@ authRoutes.post('/me/delete', requireAuth, async (c) => {
     db.prepare('DELETE FROM hashars WHERE creator_id = ?1').bind(id),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(id),
   ]);
+  const [media, delUser] = [res[0], res[res.length - 1]];
   if (delUser.meta.changes !== 1) throw new AuthError('Hisob topilmadi');
   await deletePhotos(c.env.PHOTOS, media.results.map((m) => m.r2_key));
   return c.json({ ok: true });

@@ -14,6 +14,7 @@ import { mediaRoutes } from './media.js';
 import { notifyRoutes } from './notify.js';
 import { providersOf } from './payconfig.js';
 import { paymentRoutes } from './payments.js';
+import { reportRoutes } from './reports.js';
 import { saveRoutes } from './saves.js';
 import { getSettings } from './settings.js';
 import { socialRoutes } from './social.js';
@@ -95,6 +96,7 @@ app.route('/api/hashars', hasharRoutes);
 app.route('/api', socialRoutes); // /api/hashars/:id/comments, /api/comments/:id, /api/users/:id, /api/leaderboard
 app.route('/api', paymentRoutes); // /api/hashars/:id/payment, /api/payments/payme, /api/payments/click/*
 app.route('/api', saveRoutes); // /api/hashars/:id/save, /api/me/saves
+app.route('/api', reportRoutes); // /api/reports, /api/users/:id/block, /api/me/blocks
 app.route('/api', notifyRoutes); // /api/me/notifications, /unread-count, /read
 app.route('/api', checkinRoutes); // /api/hashars/:id/checkin-code, /checkin, /checkins
 app.route('/api/geo', geoRoutes); // /api/geo/search, /api/geo/reverse (Nominatim proksi + kesh)

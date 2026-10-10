@@ -1274,3 +1274,4 @@ describe('v3: geo proksi', () => {
 await import('./payments.suite.mjs');
 await import('./v4.suite.mjs');
 await import('./account.suite.mjs');
+await import('./reports.suite.mjs');

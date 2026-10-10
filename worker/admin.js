@@ -9,6 +9,8 @@ import { notifyOwnerStmt } from './notify.js';
 import { PAID_SQL, paymeConfig, providersOf } from './payconfig.js';
 import { paymentDto, waiveStmts } from './payledger.js';
 import { getSettings, parseFee, parseNote, parseTelegram, setSettingStmt } from './settings.js';
+import { REPORT_STATUSES } from './reports.js';
+import { closeHasharReportsStmt, purgeUserReportsStmts } from './reportstmts.js';
 import { deleteComment } from './social.js';
 import {
   ConflictError,
@@ -28,6 +30,7 @@ const RECENT = 5;
 const USER_NOT_FOUND = 'Foydalanuvchi topilmadi';
 const HASHAR_NOT_FOUND = 'Hashar topilmadi';
 const COMMENT_NOT_FOUND = 'Izoh topilmadi';
+const REPORT_NOT_FOUND = 'Shikoyat topilmadi';
 const ENV_ADMIN_LOCKED = "Bu administrator ADMIN_PHONES sozlamasi orqali tayinlangan — uni paneldan o'zgartirib bo'lmaydi";
 
 /** Faqat administratorlar (avval requireAuth: mehmon 401, bloklangan 403). */
@@ -129,6 +132,7 @@ adminRoutes.get('/overview', async (c) => {
            (SELECT COUNT(*) FROM users WHERE created_at >= datetime('now', '-7 days')) AS signups_7d,
            (SELECT COUNT(*) FROM hashars WHERE created_at >= datetime('now', '-7 days')) AS hashars_7d,
            (SELECT COUNT(*) FROM hashars WHERE payment_status = 'unpaid') AS unpaid,
+           (SELECT COUNT(*) FROM reports WHERE status = 'open') AS open_reports,
            (SELECT COUNT(*) FROM payments p WHERE ${PAID_SQL}) AS payments_paid,
            (SELECT COALESCE(SUM(p.amount), 0) / 100 FROM payments p WHERE ${PAID_SQL}) AS revenue`,
       )
@@ -225,13 +229,14 @@ adminRoutes.delete('/users/:id', async (c) => {
   // Bitta tranzaksiya; rasm kalitlari ham shu tranzaksiya ichida olinadi (orada qo'shilgani qolib ketmasin)
   // Bog'liq qatorlar (izohlar, saqlanganlar, bildirishnomalar ham) oldindan o'chiriladi: meta.changes FK kaskadi
   // bilan ortib ketmasin. To'lovlar (payments) qoladi — moliyaviy tarix.
-  const [media, , , , , , , , , delUser] = await db.batch([
+  const res = await db.batch([
     db
       .prepare(
         `SELECT r2_key FROM hashar_media WHERE hashar_id IN (${own})
          UNION ALL SELECT avatar_key FROM users WHERE id = ?1 AND avatar_key IS NOT NULL`,
       )
       .bind(id),
+    ...purgeUserReportsStmts(db, id), // shikoyatlar va bloklar (izohlar o'chishidan oldin)
     db.prepare(`DELETE FROM saves WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare(`DELETE FROM notifications WHERE hashar_id IN (${own}) OR user_id = ?1 OR actor_id = ?1`).bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
@@ -242,6 +247,7 @@ adminRoutes.delete('/users/:id', async (c) => {
     db.prepare('DELETE FROM hashars WHERE creator_id = ?1').bind(id),
     db.prepare('DELETE FROM users WHERE id = ?1').bind(id),
   ]);
+  const [media, delUser] = [res[0], res[res.length - 1]];
   if (delUser.meta.changes !== 1) throw new NotFoundError(USER_NOT_FOUND);
   await deletePhotos(c.env.PHOTOS, media.results.map((m) => m.r2_key));
   return c.json({ ok: true });
@@ -287,8 +293,9 @@ adminRoutes.get('/hashars', async (c) => {
 adminRoutes.delete('/hashars/:id', async (c) => {
   const db = c.env.DB;
   const id = parseId(c.req.param('id'), HASHAR_NOT_FOUND);
-  const [media, , , , , , delHashar] = await db.batch([
+  const [media, , , , , , , delHashar] = await db.batch([
     db.prepare('SELECT r2_key FROM hashar_media WHERE hashar_id = ?1').bind(id),
+    closeHasharReportsStmt(db, id), // ochiq shikoyatlar yopiladi (izohlar o'chishidan oldin)
     db.prepare('DELETE FROM saves WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM notifications WHERE hashar_id = ?1').bind(id),
     db.prepare('DELETE FROM comments WHERE hashar_id = ?1').bind(id),
@@ -450,4 +457,99 @@ adminRoutes.post('/hashars/:id/mark-paid', async (c) => {
   if (upd.meta.changes !== 1) throw new ConflictError("Bu hashar allaqachon to'langan yoki e'lon qilingan");
   const row = await db.prepare(`${HASHAR_SELECT} WHERE h.id = ?`).bind(admin.id, id).first();
   return c.json({ ok: true, hashar: adminHasharDto(row, admin.id), payment });
+});
+
+// ---------- v5: shikoyatlar (UGC moderatsiya) ----------
+
+const REPORT_BODY_PREVIEW = 200; // izoh matni ro'yxatda shuncha belgigacha qisqartiriladi
+
+/** Matnni code point bo'yicha qisqartiradi (emoji o'rtasidan kesilmasin). */
+function preview(text, max) {
+  const chars = [...String(text ?? '')];
+  return chars.length > max ? `${chars.slice(0, max).join('')}…` : chars.join('');
+}
+
+/** Nishon haqida qisqacha: o'chirilgan bo'lsa deleted: true. `user` — nishon uchun javobgar foydalanuvchi (bloklash uchun). */
+function reportTarget(r) {
+  const user = (id, name, blockedAt) => (id != null && name != null ? { id, name, blocked: Boolean(blockedAt) } : null);
+  if (r.target_type === 'hashar') {
+    if (r.th_id == null) return { deleted: true };
+    return { deleted: false, title: r.th_title, hashar_id: r.th_id, user: user(r.th_creator_id, r.hu_name, r.hu_blocked_at) };
+  }
+  if (r.target_type === 'comment') {
+    if (r.tc_id == null) return { deleted: true };
+    return {
+      deleted: false,
+      body: preview(r.tc_body, REPORT_BODY_PREVIEW),
+      hashar_id: r.tc_hashar_id,
+      comment_id: r.tc_id,
+      user: user(r.tc_user_id, r.cu_name, r.cu_blocked_at),
+    };
+  }
+  if (r.tu_id == null) return { deleted: true };
+  return { deleted: false, user_id: r.tu_id, user_name: r.tu_name, user: user(r.tu_id, r.tu_name, r.tu_blocked_at) };
+}
+
+// GET /api/admin/reports?status=open|resolved|dismissed|all&offset=&limit= — standart: open.
+// Bolalar xavfsizligi (child_safety) ochiq shikoyatlari birinchi, keyin yangilari. count — shu nishonga jami shikoyatlar.
+adminRoutes.get('/reports', async (c) => {
+  const db = c.env.DB;
+  const { offset, limit } = paging(c);
+  const status = c.req.query('status') || 'open';
+  if (status !== 'all' && !REPORT_STATUSES.includes(status)) throw new ValidationError("Holat qiymati noto'g'ri (open, resolved, dismissed, all)");
+  const cond = status === 'all' ? '' : 'WHERE r.status = ?';
+  const params = status === 'all' ? [] : [status];
+  const [list, total, open] = await db.batch([
+    db
+      .prepare(
+        `SELECT r.id, r.target_type, r.target_id, r.reason, r.details, r.status, r.created_at, r.resolved_at,
+                r.reporter_id, rep.name AS reporter_name,
+                (SELECT COUNT(*) FROM reports r2 WHERE r2.target_type = r.target_type AND r2.target_id = r.target_id) AS count,
+                th.id AS th_id, th.title AS th_title, th.creator_id AS th_creator_id, hu.name AS hu_name, hu.blocked_at AS hu_blocked_at,
+                tc.id AS tc_id, tc.body AS tc_body, tc.hashar_id AS tc_hashar_id, tc.user_id AS tc_user_id,
+                cu.name AS cu_name, cu.blocked_at AS cu_blocked_at,
+                tu.id AS tu_id, tu.name AS tu_name, tu.blocked_at AS tu_blocked_at
+         FROM reports r
+         LEFT JOIN users rep ON rep.id = r.reporter_id
+         LEFT JOIN hashars th ON r.target_type = 'hashar' AND th.id = r.target_id
+         LEFT JOIN users hu ON hu.id = th.creator_id
+         LEFT JOIN comments tc ON r.target_type = 'comment' AND tc.id = r.target_id
+         LEFT JOIN users cu ON cu.id = tc.user_id
+         LEFT JOIN users tu ON r.target_type = 'user' AND tu.id = r.target_id
+         ${cond}
+         ORDER BY (r.status = 'open' AND r.reason = 'child_safety') DESC, r.id DESC LIMIT ? OFFSET ?`,
+      )
+      .bind(...params, limit, offset),
+    db.prepare(`SELECT COUNT(*) AS n FROM reports r ${cond}`).bind(...params),
+    db.prepare("SELECT COUNT(*) AS n FROM reports WHERE status = 'open'"),
+  ]);
+  return c.json({
+    items: list.results.map((r) => ({
+      id: r.id,
+      target_type: r.target_type,
+      target_id: r.target_id,
+      reason: r.reason,
+      details: r.details,
+      status: r.status,
+      created_at: toIso(r.created_at),
+      resolved_at: toIso(r.resolved_at),
+      reporter: { id: r.reporter_id, name: r.reporter_name },
+      target: reportTarget(r),
+      count: r.count,
+    })),
+    total: total.results[0].n,
+    open_count: open.results[0].n,
+  });
+});
+
+// POST /api/admin/reports/:id/resolve — {status: 'resolved' | 'dismissed'} → {ok, status}
+adminRoutes.post('/reports/:id/resolve', async (c) => {
+  const id = parseId(c.req.param('id'), REPORT_NOT_FOUND);
+  const status = (await readJson(c)).status;
+  if (status !== 'resolved' && status !== 'dismissed') throw new ValidationError("Holat qiymati noto'g'ri (resolved yoki dismissed)");
+  const r = await c.env.DB.prepare("UPDATE reports SET status = ?2, resolved_at = datetime('now'), resolved_by = ?3 WHERE id = ?1")
+    .bind(id, status, c.get('user').id)
+    .run();
+  if (r.meta.changes !== 1) throw new NotFoundError(REPORT_NOT_FOUND);
+  return c.json({ ok: true, status });
 });

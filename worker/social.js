@@ -5,6 +5,7 @@ import { HASHAR_SELECT, PUBLISHED_SQL, VISIBLE_SQL, assertVisible, toDto } from 
 import { avatarUrl } from './media.js';
 import { deleteCommentNotificationsStmt, maybePurgeNotifications, notifyCommentStmt } from './notify.js';
 import { limitComment } from './ratelimit.js';
+import { closeCommentReportsStmt } from './reportstmts.js';
 import { ForbiddenError, NotFoundError, ValidationError, parseCommentBody, parseId, readJson, toIso } from './validate.js';
 
 const COMMENTS_LIMIT = 200; // bitta hashar uchun ko'rsatiladigan oxirgi izohlar
@@ -45,7 +46,14 @@ socialRoutes.get('/hashars/:id/comments', async (c) => {
   const db = c.env.DB;
   const [h, list] = await db.batch([
     db.prepare('SELECT id, creator_id, payment_status FROM hashars WHERE id = ?1').bind(id),
-    db.prepare(`${COMMENT_SELECT} WHERE cm.hashar_id = ?1 ORDER BY cm.id DESC LIMIT ${COMMENTS_LIMIT}`).bind(id),
+    // v5: ko'ruvchi bloklagan foydalanuvchilarning izohlari yashiriladi (mehmonda ?2 NULL → hech narsa yashirilmaydi)
+    db
+      .prepare(
+        `${COMMENT_SELECT} WHERE cm.hashar_id = ?1
+           AND NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.user_id = ?2 AND ub.blocked_id = cm.user_id)
+         ORDER BY cm.id DESC LIMIT ${COMMENTS_LIMIT}`,
+      )
+      .bind(id, uid),
   ]);
   if (!h.results.length) throw new NotFoundError(HASHAR_NOT_FOUND);
   assertVisible(c, h.results[0]);
@@ -81,7 +89,11 @@ socialRoutes.post('/hashars/:id/comments', requireVerifiedEmail, async (c) => {
 
 /** Izohni o'chirish (o'chirilgan bo'lsa true) — uning bildirishnomalari (matn parchasi bilan) ham, bitta batch'da. */
 export async function deleteComment(db, id) {
-  const [, r] = await db.batch([deleteCommentNotificationsStmt(db, id), db.prepare('DELETE FROM comments WHERE id = ?1').bind(id)]);
+  const [, r] = await db.batch([
+    deleteCommentNotificationsStmt(db, id),
+    db.prepare('DELETE FROM comments WHERE id = ?1').bind(id),
+    closeCommentReportsStmt(db, id), // ochiq shikoyatlar "hal qilindi" deb yopiladi
+  ]);
   return r.meta.changes === 1;
 }
 
@@ -113,17 +125,18 @@ socialRoutes.get('/users/:id', async (c) => {
            (SELECT COUNT(*) FROM volunteers v JOIN hashars h ON h.id = v.hashar_id
               WHERE v.user_id = u.id AND h.creator_id <> u.id AND ${PUBLISHED_SQL}) AS joined,
            (SELECT COUNT(*) FROM volunteers v JOIN hashars h ON h.id = v.hashar_id
-              WHERE v.user_id = u.id AND h.status = 'COMPLETED' AND ${PUBLISHED_SQL}) AS completed
+              WHERE v.user_id = u.id AND h.status = 'COMPLETED' AND ${PUBLISHED_SQL}) AS completed,
+           EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.user_id = ?2 AND ub.blocked_id = u.id) AS is_blocked
          FROM users u WHERE u.id = ?1`,
       )
-      .bind(id),
+      .bind(id, uid),
     db
       .prepare(`${HASHAR_SELECT} WHERE h.creator_id = ? AND ${VISIBLE_SQL} ORDER BY h.id DESC LIMIT ${PROFILE_HASHARS}`)
       .bind(uid, id),
   ]);
   const row = u.results[0];
   if (!row) throw new NotFoundError(USER_NOT_FOUND);
-  return c.json({
+  const profile = {
     id: row.id,
     name: row.name,
     bio: row.bio,
@@ -132,7 +145,9 @@ socialRoutes.get('/users/:id', async (c) => {
     created_at: toIso(row.created_at),
     stats: { created: row.created, joined: row.joined, completed: row.completed },
     hashars: hashars.results.map((r) => toDto(r, uid)),
-  });
+  };
+  if (uid != null) profile.is_blocked = Boolean(row.is_blocked); // v5: ko'ruvchi bu foydalanuvchini bloklaganmi
+  return c.json(profile);
 });
 
 // ---------- Reyting ----------

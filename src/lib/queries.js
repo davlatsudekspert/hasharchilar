@@ -14,6 +14,7 @@ export const Q = {
   myCreated: ['me:created', () => api.listHashars({ mine: 'created' }).then(arr)],
   myJoined: ['me:joined', () => api.listHashars({ mine: 'joined' }).then(arr)],
   mySaves: ['me:saves', () => api.mySaves().then(arr)],
+  myBlocks: ['me:blocks', () => api.myBlocks().then(arr)],
   payment: (id) => [`payment:${id}`, () => api.hasharPayment(id)],
   app: ['app', () => api.appInfo()],
 };

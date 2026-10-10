@@ -1,27 +1,30 @@
-// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar / To'lovlar / Sozlamalar.
+// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar / To'lovlar / Shikoyatlar / Sozlamalar.
 // Alohida bundle (main.jsx da React.lazy) — oddiy foydalanuvchi uni yuklamaydi.
 import { useEffect, useRef, useState } from 'react';
 import AuthModal from '../components/AuthModal.jsx';
 import { Logo } from '../components/Header.jsx';
-import { ArrowLeftIcon, LeafIcon, SettingsIcon, ShieldIcon, UsersIcon, WalletIcon } from '../components/icons.jsx';
+import { ArrowLeftIcon, FlagIcon, LeafIcon, SettingsIcon, ShieldIcon, UsersIcon, WalletIcon } from '../components/icons.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/auth.jsx';
 import { hideSplash } from '../lib/native.js';
+import { api } from '../lib/api.js';
 import { closeAdmin } from '../lib/router.js';
 import { cx, formatPhone } from '../lib/utils.js';
 import HasharsTab from './HasharsTab.jsx';
 import OverviewTab from './OverviewTab.jsx';
 import PaymentsTab from './PaymentsTab.jsx';
+import ReportsTab from './ReportsTab.jsx';
 import SettingsTab from './SettingsTab.jsx';
 import UsersTab from './UsersTab.jsx';
 
-// short — telefon uchun qisqa yorliq (5 ta tab bir qatorga sig'adi, gorizontal aylantirish shart emas)
+// short — telefon uchun qisqa yorliq (6 ta tab bir qatorga sig'adi, gorizontal aylantirish shart emas)
 const TABS = [
   { id: 'overview', label: 'Umumiy', short: 'Umumiy', icon: ShieldIcon },
   { id: 'users', label: 'Foydalanuvchilar', short: "A'zolar", icon: UsersIcon },
-  { id: 'hashars', label: 'Hasharlar', short: 'Hasharlar', icon: LeafIcon },
-  { id: 'payments', label: "To'lovlar", short: "To'lovlar", icon: WalletIcon },
+  { id: 'hashars', label: 'Hasharlar', short: 'Hashar', icon: LeafIcon },
+  { id: 'payments', label: "To'lovlar", short: "To'lov", icon: WalletIcon },
+  { id: 'reports', label: 'Shikoyatlar', short: 'Shikoyat', icon: FlagIcon },
   { id: 'settings', label: 'Sozlamalar', short: 'Sozlama', icon: SettingsIcon },
 ];
 
@@ -98,6 +101,7 @@ export default function AdminApp() {
   const [tab, setTab] = useState(tabFromHash);
   const [userQuery, setUserQuery] = useState({ q: '', key: 0 }); // Umumiy → Foydalanuvchilar o'tishi
   const [showLogin, setShowLogin] = useState(false);
+  const [openReports, setOpenReports] = useState(0); // ochiq shikoyatlar soni (tab belgisi)
   const user = auth.user;
 
   useEffect(() => {
@@ -128,6 +132,16 @@ export default function AdminApp() {
     const left = strip.scrollLeft + r.left - box.left - (strip.clientWidth - r.width) / 2;
     strip.scrollTo({ left: Math.max(0, left), behavior: 'smooth' });
   }, [tab, isAdminUser]);
+
+  // Ochiq shikoyatlar soni — admin kirgach bir marta (ReportsTab ochiq bo'lsa o'zi yangilaydi)
+  const adminId = user && user.is_admin ? user.id : null;
+  useEffect(() => {
+    if (!adminId) return;
+    api.admin
+      .reports({ status: 'open', limit: 1 })
+      .then((d) => setOpenReports(d.open_count))
+      .catch(() => {});
+  }, [adminId]);
 
   // Tab manzilda saqlanadi (#admin/users) — sahifa yangilansa ham o'sha tab ochiladi
   const changeTab = (id) => {
@@ -167,7 +181,7 @@ export default function AdminApp() {
         {/* Telefonda (md dan kichik): 5 ustunli panel — ikonka ustida qisqa yorliq, hammasi ko'rinadi;
             kattaroq ekranda — gorizontal "pill"lar (sig'masa aylantiriladi, aktiv tab ko'rinishga suriladi) */}
         <div ref={tabsRef} role="tablist" aria-label="Admin bo'limlari" className="no-scrollbar -mx-4 mt-4 overflow-x-auto px-4">
-          <div className="grid grid-cols-5 gap-1 rounded-2xl bg-slate-200/60 p-1 md:inline-flex md:min-w-0">
+          <div className="grid grid-cols-6 gap-1 rounded-2xl bg-slate-200/60 p-1 md:inline-flex md:min-w-0">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -177,13 +191,18 @@ export default function AdminApp() {
                 data-tab={t.id}
                 onClick={() => changeTab(t.id)}
                 className={cx(
-                  'flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-1 py-2 text-[11px] font-bold leading-tight transition md:flex-none md:flex-row md:gap-1.5 md:whitespace-nowrap md:px-5 md:py-2.5 md:text-sm',
+                  'relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-0.5 py-2 text-[10px] font-bold leading-tight min-[400px]:text-[11px] transition md:flex-none md:flex-row md:gap-1.5 md:whitespace-nowrap md:px-5 md:py-2.5 md:text-sm',
                   tab === t.id ? 'bg-white text-brand-800 shadow-sm' : 'text-slate-600 hover:text-slate-900',
                 )}
               >
                 <t.icon className="h-5 w-5 shrink-0 md:h-4 md:w-4" />
                 <span className="max-w-full truncate md:hidden">{t.short}</span>
                 <span className="hidden md:inline">{t.label}</span>
+                {t.id === 'reports' && openReports > 0 && (
+                  <span className="absolute right-1 top-0.5 min-w-[16px] rounded-full bg-red-600 px-1 text-center text-[10px] font-extrabold leading-4 text-white md:static md:ml-0.5" data-testid="reports-badge">
+                    {openReports > 99 ? '99+' : openReports}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -202,6 +221,7 @@ export default function AdminApp() {
           {tab === 'users' && <UsersTab key={userQuery.key} meId={user.id} initialQuery={userQuery.q} />}
           {tab === 'hashars' && <HasharsTab />}
           {tab === 'payments' && <PaymentsTab />}
+          {tab === 'reports' && <ReportsTab onCount={setOpenReports} />}
           {tab === 'settings' && <SettingsTab />}
         </div>
       </>

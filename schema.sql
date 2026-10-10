@@ -1,4 +1,4 @@
--- hasharchilar.uz — Cloudflare D1 sxemasi: migrations/*.sql birlashtirilgani (0001_init + 0002_admin + 0003_v3 + 0004_email + 0005_v4)
+-- hasharchilar.uz — Cloudflare D1 sxemasi: migrations/*.sql birlashtirilgani (0001_init + 0002_admin + 0003_v3 + 0004_email + 0005_v4 + 0006_reports)
 -- Qo'llash: npx wrangler d1 migrations apply hasharchilar --local | --remote
 -- Eslatma: D1 tashqi kalitlarni (FOREIGN KEY) standart holatda tekshiradi;
 -- LIKE/GLOB shablonlari 50 baytdan oshmasligi kerak (D1 limiti).
@@ -225,3 +225,31 @@ CREATE INDEX idx_notifications_user ON notifications(user_id, id);
 CREATE INDEX idx_notifications_unread ON notifications(user_id) WHERE read_at IS NULL;
 CREATE INDEX idx_notifications_hashar ON notifications(hashar_id);
 CREATE INDEX idx_notifications_actor ON notifications(actor_id);
+
+-- Shikoyatlar. target_id uchun tashqi kalit YO'Q (nishon turi hashar / izoh / foydalanuvchi bo'lishi mumkin);
+-- nishon o'chsa kod shikoyatni yopadi (hashar / izoh) yoki o'chiradi (foydalanuvchi). Shikoyatchi o'chsa — kaskad.
+-- Bitta foydalanuvchi bitta nishonga bitta shikoyat (takror — mavjudini yangilaydi).
+CREATE TABLE reports (
+  id          INTEGER PRIMARY KEY,
+  reporter_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('hashar', 'comment', 'user')),
+  target_id   INTEGER NOT NULL,
+  reason      TEXT NOT NULL CHECK (reason IN ('spam', 'abuse', 'sexual', 'child_safety', 'violence', 'fraud', 'other')),
+  details     TEXT NOT NULL DEFAULT '',
+  status      TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'dismissed')),
+  created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  resolved_at TEXT,
+  resolved_by INTEGER,                                     -- ko'rib chiqqan administrator (tashqi kalitsiz)
+  UNIQUE (reporter_id, target_type, target_id)
+);
+CREATE INDEX idx_reports_status ON reports(status, id);
+CREATE INDEX idx_reports_target ON reports(target_type, target_id);
+
+-- Foydalanuvchi boshqa foydalanuvchini bloklaydi: uning izohlari va hasharlari bloklovchiga ko'rinmaydi
+CREATE TABLE user_blocks (
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, blocked_id)
+);
+CREATE INDEX idx_user_blocks_blocked ON user_blocks(blocked_id);

@@ -198,6 +198,12 @@ export const api = {
   deleteAccount: (password) => request('/me/delete', { method: 'POST', json: { password }, keepSession: true }),
   leaderboard: (period = 'all') => request(`/leaderboard${qs({ period })}`),
 
+  // Moderatsiya: shikoyat va bloklash
+  report: (target_type, target_id, reason, details) => request('/reports', { method: 'POST', json: { target_type, target_id, reason, details } }),
+  blockUser: (id) => request(`/users/${id}/block`, { method: 'POST' }),
+  unblockUser: (id) => request(`/users/${id}/block`, { method: 'DELETE' }),
+  myBlocks: () => request('/me/blocks'),
+
   // Saqlanganlar (xatcho'p)
   save: (id) => request(`/hashars/${id}/save`, { method: 'POST' }),
   unsave: (id) => request(`/hashars/${id}/save`, { method: 'DELETE' }),
@@ -231,6 +237,8 @@ export const api = {
     hashars: (params) => request(`/admin/hashars${qs(params)}`),
     deleteHashar: (id) => request(`/admin/hashars/${id}`, { method: 'DELETE' }),
     deleteComment: (id) => request(`/admin/comments/${id}`, { method: 'DELETE' }),
+    reports: (params) => request(`/admin/reports${qs(params)}`),
+    resolveReport: (id, status) => request(`/admin/reports/${id}/resolve`, { method: 'POST', json: { status } }),
     payments: (params) => request(`/admin/payments${qs(params)}`),
     markPaid: (id, body = {}) => request(`/admin/hashars/${id}/mark-paid`, { method: 'POST', json: body }),
     settings: () => request('/admin/settings'),

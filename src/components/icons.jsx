@@ -174,6 +174,13 @@ export const BanIcon = icon(
     <path d="m4.9 4.9 14.2 14.2" />
   </>,
 );
+export const MoreIcon = icon(
+  <>
+    <circle cx="5" cy="12" r="1" />
+    <circle cx="12" cy="12" r="1" />
+    <circle cx="19" cy="12" r="1" />
+  </>,
+);
 export const ArrowLeftIcon = icon(<path d="M19 12H5M12 19l-7-7 7-7" />);
 export const ArrowRightIcon = icon(<path d="M5 12h14M12 5l7 7-7 7" />);
 export const ChevronLeftIcon = icon(<path d="m15 18-6-6 6-6" />);

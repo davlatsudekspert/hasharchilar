@@ -245,3 +245,25 @@ export function limitCheckin(c, userId) {
     "Juda ko'p urinish. Birozdan so'ng qayta urinib ko'ring",
   );
 }
+
+/** Shikoyat yuborish: foydalanuvchi bo'yicha 20 ta / soat (spamdan himoya). */
+export function limitReport(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `report:${userId}`,
+    20,
+    60 * 60,
+    "Juda ko'p shikoyat yuborildi. Birozdan so'ng qayta urinib ko'ring",
+  );
+}
+
+/** Bloklash / blokdan chiqarish: foydalanuvchi bo'yicha 60 ta / soat. */
+export function limitBlock(c, userId) {
+  return rateLimit(
+    c.env.DB,
+    `block:${userId}`,
+    60,
+    60 * 60,
+    "Juda ko'p so'rov. Birozdan so'ng qayta urinib ko'ring",
+  );
+}

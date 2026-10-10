@@ -5,6 +5,7 @@ import { limitCreate, limitJoin } from './ratelimit.js';
 import { avatarUrl, deletePhotos, mediaUrl, readPhoto, storePhoto } from './media.js';
 import { maybePurgeNotifications, notifyCompletedStmt, notifyJoinStmt } from './notify.js';
 import { paymentInfo } from './payments.js';
+import { closeHasharReportsStmt } from './reportstmts.js';
 import { getSettings } from './settings.js';
 import {
   AuthError,
@@ -50,7 +51,8 @@ export const hasharSelect = (extra = '') => `
             ORDER BY m.id DESC LIMIT 1) AS after_url,
          EXISTS (SELECT 1 FROM volunteers v WHERE v.hashar_id = h.id AND v.user_id = ?1) AS joined,
          (SELECT v.checked_in_at FROM volunteers v WHERE v.hashar_id = h.id AND v.user_id = ?1) AS my_checked_in_at,
-         EXISTS (SELECT 1 FROM saves s WHERE s.user_id = ?1 AND s.hashar_id = h.id) AS saved${extra}
+         EXISTS (SELECT 1 FROM saves s WHERE s.user_id = ?1 AND s.hashar_id = h.id) AS saved,
+         EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.user_id = ?1 AND ub.blocked_id = h.creator_id) AS creator_blocked${extra}
   FROM hashars h JOIN users u ON u.id = h.creator_id`;
 
 export const HASHAR_SELECT = hasharSelect();
@@ -114,6 +116,7 @@ export function toDto(r, userId, { admin = false } = {}) {
     checked_in_count: r.checked_in_count ?? 0,
     saved: Boolean(r.saved),
     checked_in_at: toIso(r.my_checked_in_at ?? null),
+    creator_blocked: Boolean(r.creator_blocked), // v5: ko'ruvchi egasini bloklagan (faqat to'g'ridan-to'g'ri ochilganda ko'rinadi)
   };
   if (isOwner || admin) dto.payment_status = r.payment_status ?? 'paid';
   return dto;
@@ -182,7 +185,8 @@ export const hasharRoutes = new Hono();
 hasharRoutes.get('/', async (c) => {
   const user = c.get('user');
   const uid = user?.id ?? null;
-  const where = [VISIBLE_SQL]; // to'lanmaganlar — faqat egasiga
+  // to'lanmaganlar — faqat egasiga; ko'ruvchi bloklagan foydalanuvchilarning hasharlari ro'yxatda yo'q (mehmonda ?1 NULL)
+  const where = [VISIBLE_SQL, 'NOT EXISTS (SELECT 1 FROM user_blocks ub WHERE ub.user_id = ?1 AND ub.blocked_id = h.creator_id)'];
   const params = [uid];
 
   const status = c.req.query('status') || null; // holat filtri pastda (har holat alohida so'rov)
@@ -544,8 +548,9 @@ hasharRoutes.delete('/:id', requireVerifiedEmail, async (c) => {
   // Bog'liq qatorlar oldindan o'chiriladi: meta.changes (o'chirilgan hashar soni) FK kaskadi bilan ortib ketmasin.
   // To'lovlar (payments) o'chirilmaydi — moliyaviy tarix.
   const pending = "EXISTS (SELECT 1 FROM hashars WHERE id = ?1 AND status = 'PENDING')";
-  const [, , , , , delHashar] = await db.batch([
+  const [, , , , , , delHashar] = await db.batch([
     // Tranzaksiya: hashar PENDING bo'lsagina hammasi o'chadi
+    closeHasharReportsStmt(db, id, pending), // ochiq shikoyatlar yopiladi (izohlar o'chishidan oldin)
     db.prepare(`DELETE FROM saves WHERE hashar_id = ?1 AND ${pending}`).bind(id),
     db.prepare(`DELETE FROM notifications WHERE hashar_id = ?1 AND ${pending}`).bind(id),
     db

@@ -13,6 +13,7 @@ import {
   HandIcon,
   InfoIcon,
   LogOutIcon,
+  BanIcon,
   BellIcon,
   BookmarkIcon,
   MailIcon,
@@ -27,6 +28,7 @@ import {
   TrophyIcon,
   UserIcon,
 } from '../components/icons.jsx';
+import { BlockedUsersModal } from '../components/BlockParts.jsx';
 import { BadgesGrid, ChangePasswordForm, DeleteAccountModal, EditProfileModal, ProfileHero } from '../components/ProfileParts.jsx';
 import { AccentPicker, ThemePicker, ThemePreview } from '../components/AppearancePicker.jsx';
 import LockSettings from '../lock/LockSettings.jsx';
@@ -330,6 +332,7 @@ function Settings({ onEdit, appInfo }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [blockedOpen, setBlockedOpen] = useState(false);
   const doLogout = async () => {
     setBusy(true);
     await logout();
@@ -391,11 +394,13 @@ function Settings({ onEdit, appInfo }) {
         <SettingsRow icon={ShareIcon} title="Do'stlarga ulashish" text="hasharchilar.uz havolasini yuboring" onClick={shareApp} />
         {!IS_NATIVE && <SettingsRow icon={DownloadIcon} title="Android ilova" text="APK yuklab olish" href={appDownloadUrl(appInfo)} download="hasharchilar.apk" />}
         <SettingsRow icon={InfoIcon} title="Loyiha haqida" text="Qanday ishlaydi, savollar" onClick={() => navigate('/haqida')} />
+        <SettingsRow icon={BanIcon} title="Bloklangan foydalanuvchilar" text="Izohlari va hasharlari sizga ko'rinmaydi" onClick={() => setBlockedOpen(true)} />
         <SettingsRow icon={LogOutIcon} title="Chiqish" danger onClick={doLogout}>
           {busy ? <Spinner className="text-red-600" /> : null}
         </SettingsRow>
         <SettingsRow icon={TrashIcon} title="Hisobni o'chirish" text="Hisob va barcha ma'lumotlar butunlay o'chadi" danger onClick={() => setDeleting(true)} />
       </section>
+      {blockedOpen && <BlockedUsersModal onClose={() => setBlockedOpen(false)} />}
       {deleting && <DeleteAccountModal onClose={() => setDeleting(false)} onDeleted={onAccountDeleted} />}
     </div>
   );

@@ -1,12 +1,14 @@
 // Izohlar: ro'yxat (eski → yangi), yozish (kirish talab qilinadi), o'z izohini / admin — istalganini o'chirish.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useActions } from '../lib/actions.jsx';
 import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { haptic } from '../lib/native.js';
 import { useApi } from '../lib/store.js';
 import { cx, timeAgo } from '../lib/utils.js';
-import { MessageIcon, SendIcon, TrashIcon } from './icons.jsx';
+import { useBlockUser } from './BlockParts.jsx';
+import { BanIcon, FlagIcon, MessageIcon, MoreIcon, SendIcon, TrashIcon } from './icons.jsx';
+import { useReport } from './ReportSheet.jsx';
 import { useToast } from './Toast.jsx';
 import { Avatar, Link, Spinner } from './ui.jsx';
 
@@ -20,8 +22,34 @@ export default function Comments({ hasharId, onCount }) {
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [menuId, setMenuId] = useState(null); // ochiq "⋯" menyusi (izoh id)
+  const [report, reportSheet] = useReport();
+  const [askBlock, blockModal] = useBlockUser();
   const list = Array.isArray(c.data) ? c.data : [];
   const unavailable = c.error && c.error.status === 404;
+
+  // "⋯" menyusi: tashqariga bosilsa yoki Esc bilan yopiladi
+  useEffect(() => {
+    if (menuId == null) return undefined;
+    const close = (e) => {
+      if (e.type === 'keydown' ? e.key === 'Escape' : !e.target.closest('[data-cmenu]')) setMenuId(null);
+    };
+    document.addEventListener('pointerdown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('pointerdown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [menuId]);
+
+  const blockAuthor = (cm) => {
+    setMenuId(null);
+    askBlock(cm.user, () => {
+      // Bloklangan foydalanuvchining izohlari darhol yashiriladi
+      c.mutate((l) => (Array.isArray(l) ? l.filter((x) => x.user?.id !== cm.user.id) : l));
+      onCount?.(list.filter((x) => x.user?.id !== cm.user.id).length);
+    });
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -99,7 +127,47 @@ export default function Comments({ hasharId, onCount }) {
                     <Link to={`/u/${cm.user?.id}`} className="truncate text-sm font-bold text-ink hover:underline">
                       {cm.user?.name || 'Foydalanuvchi'}
                     </Link>
-                    <span className="shrink-0 text-xs text-ink-3">{timeAgo(cm.created_at)}</span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      <span className="text-xs text-ink-3">{timeAgo(cm.created_at)}</span>
+                      {!cm.is_mine && cm.user && (
+                        <span className="relative" data-cmenu>
+                          <button
+                            type="button"
+                            onClick={() => setMenuId(menuId === cm.id ? null : cm.id)}
+                            aria-label="Izoh amallari"
+                            aria-haspopup="menu"
+                            aria-expanded={menuId === cm.id}
+                            data-testid="comment-menu"
+                            className="-mr-2 grid h-8 w-8 place-items-center rounded-full text-ink-3 transition hover:bg-surface-3 hover:text-ink"
+                          >
+                            <MoreIcon className="h-5 w-5" />
+                          </button>
+                          {menuId === cm.id && (
+                            <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded-2xl border border-line bg-surface py-1 shadow-2xl">
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => {
+                                  setMenuId(null);
+                                  report({ type: 'comment', id: cm.id, label: cm.user.name });
+                                }}
+                                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-ink-2 hover:bg-surface-2"
+                              >
+                                <FlagIcon className="h-4 w-4" /> Shikoyat qilish
+                              </button>
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => blockAuthor(cm)}
+                                className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10"
+                              >
+                                <BanIcon className="h-4 w-4" /> Foydalanuvchini bloklash
+                              </button>
+                            </div>
+                          )}
+                        </span>
+                      )}
+                    </span>
                   </div>
                   <p className="mt-0.5 whitespace-pre-line break-words text-[15px] leading-relaxed text-ink-2">{cm.body}</p>
                 </div>
@@ -154,6 +222,8 @@ export default function Comments({ hasharId, onCount }) {
           </button>
         </form>
       )}
+      {reportSheet}
+      {blockModal}
     </section>
   );
 }
