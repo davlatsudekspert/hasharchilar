@@ -165,9 +165,17 @@ jobs:
           </dict></plist>
           PLIST
 
-          xcodebuild -exportArchive -archivePath build/App.xcarchive \
+          if ! xcodebuild -exportArchive -archivePath build/App.xcarchive \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath build/export \
-            "${AUTH[@]}" | tail -40
+            "${AUTH[@]}" 2>&1 | tail -40; then
+            # Apple'ning batafsil logi (sabab: ilova App Store Connect'da yo'q, kalit huquqi, shartnoma...)
+            LOGDIR=$(ls -dt "${TMPDIR:-/tmp}"/*.xcdistributionlogs 2>/dev/null | head -1 || true)
+            if [ -n "$LOGDIR" ]; then
+              grep -h -i -E 'error|fail|not found|forbidden|agreement|unauthor' "$LOGDIR"/*.log 2>/dev/null | grep -v -i 'privatekey' | tail -40 || true
+            fi
+            echo "::error::App Store Connect'ga yuklanmadi. Tekshiring: 1) App Store Connect'da uz.hasharchilar.app ilovasi yaratilganmi; 2) API kaliti App Manager/Admin; 3) Agreements (Paid/Free) qabul qilinganmi."
+            rm -f "$KEY"; exit 1
+          fi
           rm -f "$KEY"
           {
             echo "## iOS ${MARKETING_VERSION} (build ${BUILD_NUMBER})"
