@@ -34,6 +34,7 @@ import { goBack, navigate } from '../lib/router.js';
 import { storage } from '../lib/storage.js';
 import { invalidate, prime } from '../lib/store.js';
 import { cx, formatDateLong, TASHKENT, tashkentNow, tashkentTomorrow } from '../lib/utils.js';
+import { IS_IOS } from '../lib/config.js';
 
 const SUGGESTED_ITEMS = ["Qo'lqop", 'Belkurak', 'Axlat qoplari', 'Supurgi', "Ko'chat", 'Chelak', "Bo'yoq", "Cho'tka", 'Suv', 'Tirma', 'Etik'];
 const STEPS = [
@@ -83,7 +84,9 @@ const initial = () => {
 export default function CreatePage() {
   const { user, ready } = useAuth();
   const { requireVerified } = useActions();
-  const { hashar_fee: fee } = useServerConfig();
+  const { hashar_fee: serverFee } = useServerConfig();
+  // iOS (App Store): narx ilova ichida ko'rsatilmaydi — e'lonni administrator tasdiqlaydi
+  const fee = IS_IOS ? 0 : serverFee;
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [f, setF] = useState(initial);

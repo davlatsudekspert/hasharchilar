@@ -22,6 +22,21 @@ export const IS_NATIVE = (() => {
  */
 export const IS_PLAY = import.meta.env.VITE_PLAY === '1';
 
+/** iOS ilova (App Store / TestFlight). */
+export const IS_IOS = (() => {
+  try {
+    return Capacitor.getPlatform() === 'ios';
+  } catch {
+    return false;
+  }
+})();
+
+/**
+ * Do'kon orqali tarqatiladigan build (Google Play yoki App Store): yangilanishni do'kon qiladi,
+ * ilova ichida saytdagi APK yoki tashqi to'lov taklif qilinmaydi.
+ */
+export const IS_STORE = IS_PLAY || IS_IOS;
+
 /**
  * Media yo'lini to'liq URL ga aylantiradi.
  * - `http(s)://`, `blob:`, `data:` — o'zgarishsiz;

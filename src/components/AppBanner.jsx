@@ -1,6 +1,6 @@
 // APK ma'lumoti (/api/app): saytda "Android ilovani yuklab olish" banneri, APK ichida — "Yangi versiya" banneri.
 import { useEffect, useState } from 'react';
-import { IS_NATIVE, IS_PLAY, mediaUrl } from '../lib/config.js';
+import { IS_NATIVE, IS_STORE, mediaUrl } from '../lib/config.js';
 import { nativeBuild } from '../lib/native.js';
 import { Q } from '../lib/queries.js';
 import { storage } from '../lib/storage.js';
@@ -42,8 +42,8 @@ function useUpdateAvailable(info) {
 export default function AppBanner({ info }) {
   const [dismissed, setDismissed] = useState(() => storage.get(DISMISS_KEY));
   const update = useUpdateAvailable(info);
-  // Play versiyasi Play Market orqali yangilanadi — saytdagi APK taklif qilinmaydi
-  if (!info || (IS_NATIVE && (IS_PLAY || !update))) return null;
+  // Play / App Store versiyasi do'kon orqali yangilanadi — saytdagi APK taklif qilinmaydi
+  if (!info || (IS_NATIVE && (IS_STORE || !update))) return null;
   const versionKey = (IS_NATIVE ? 'native-' : '') + (info.version || '1');
   if (dismissed === versionKey) return null;
   const dismiss = () => {

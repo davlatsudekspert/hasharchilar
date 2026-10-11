@@ -3,7 +3,7 @@
 // 2) modul yo'q (yoki Google Play xizmatlari yo'q, masalan Huawei) — kamera WebView ortida ochiladi va
 //    ustiga o'zimizning ramka chiziladi; modul shu payt fonda o'rnatiladi (keyingi safar uchun).
 // Natija: QR matni (rawValue); bekor qilinsa yoki saytda — null. Xato — Error (o'zbekcha matn bilan).
-import { IS_NATIVE } from '../lib/config.js';
+import { IS_IOS, IS_NATIVE } from '../lib/config.js';
 import { registerModal } from '../lib/modals.js';
 import { haptic } from '../lib/native.js';
 
@@ -14,8 +14,9 @@ const markExternal = () => lockMod().then((m) => m && m.markExternal());
 const isLocked = () => lockMod().then((m) => !!(m && m.getLockState().locked));
 
 /** Skaner shu qurilmada bormi (sinxron: tugmani ko'rsatish uchun). */
+// iOS: ML Kit plagini Swift Package Manager'da yo'q (ilovaga kiritilmagan) — kod qo'lda kiritiladi
 export function scannerSupported() {
-  return IS_NATIVE;
+  return IS_NATIVE && !IS_IOS;
 }
 
 const DENIED =
@@ -31,7 +32,7 @@ let busy = false;
 
 /** QR kodni skanerlaydi. */
 export async function scanQr() {
-  if (!IS_NATIVE || busy) return null;
+  if (!scannerSupported() || busy) return null;
   busy = true;
   try {
     const { BarcodeScanner, BarcodeFormat } = await import('@capacitor-mlkit/barcode-scanning');

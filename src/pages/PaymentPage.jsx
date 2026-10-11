@@ -29,6 +29,7 @@ import { goBack, navigate } from '../lib/router.js';
 import { invalidate, useApi } from '../lib/store.js';
 import { cx, formatDateLong, timeAgo } from '../lib/utils.js';
 import { openApp, openExternal } from '../native/browser.js';
+import { IS_IOS } from '../lib/config.js';
 
 /** Izohdagi karta raqami (16 raqam) — alohida nusxalash uchun. */
 const cardNumberIn = (s) => {
@@ -227,7 +228,8 @@ export default function PaymentPage({ route }) {
     const providers = [info.payme_url && ['payme', info.payme_url], info.click_url && ['click', info.click_url]].filter(Boolean);
     const history = Array.isArray(info.history) ? info.history : [];
     // Narx 0 (bepul): egasining hashari serverda o'zi e'lon qilinadi; bu holat — admin (yoki eski server) uchun
-    const free = !(Number(info.amount) > 0);
+    // iOS (App Store 3.1.1): ilova ichida tashqi to'lov ko'rsatilmaydi — e'lonni administrator tasdiqlaydi
+    const free = IS_IOS || !(Number(info.amount) > 0);
     const isAdminView = !!(user && user.is_admin) && !(hashar && hashar.is_owner);
     body = (
       <div className="space-y-4">
