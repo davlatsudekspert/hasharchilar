@@ -142,11 +142,15 @@ jobs:
           fi
           AUTH=(-allowProvisioningUpdates -authenticationKeyPath "$KEY" -authenticationKeyID "$KID" -authenticationKeyIssuerID "$ISS")
 
+          # Arxiv imzosiz yig'iladi (development profili / qurilma shart emas); imzo eksportda —
+          # App Store distribution sertifikati va profili API kaliti orqali avtomatik yaratiladi
+          set -o pipefail
           xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Release \
             -destination 'generic/platform=iOS' -archivePath build/App.xcarchive \
             DEVELOPMENT_TEAM="$TEAM" CODE_SIGN_STYLE=Automatic \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
             MARKETING_VERSION="$MARKETING_VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
-            "${AUTH[@]}" archive | tail -40
+            archive | tail -40
 
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
