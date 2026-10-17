@@ -2,7 +2,7 @@
 // admin /api/admin/reports. tests/api.test.mjs oxirida ulanadi (npm run test:api).
 import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
-import { RUN, api, asAdmin, hasharForm, register, rnd, setFee } from './helpers.mjs';
+import { RUN, api, asAdmin, hasharForm, register, rnd } from './helpers.mjs';
 
 async function createHashar(owner, over = {}) {
   const r = await api('/api/hashars', { method: 'POST', token: owner.token, form: hasharForm({ title: `Shikoyat ${RUN} ${rnd(1e6)}`, ...over }, null) });
@@ -30,7 +30,6 @@ describe('shikoyatlar (POST /api/reports)', () => {
   let cm;
 
   before(async () => {
-    await setFee(0);
     owner = await register(`Shik Ega ${RUN}`);
     reporter = await register(`Shik Yuboruvchi ${RUN}`);
     hashar = await createHashar(owner);
@@ -117,17 +116,6 @@ describe('shikoyatlar (POST /api/reports)', () => {
     const r = await report(u, { target_type: 'user', target_id: owner.user.id, reason: 'other', details: '😀'.repeat(500) });
     assert.equal(r.status, 201, JSON.stringify(r.data));
   });
-
-  test('boshqa foydalanuvchi to\'lanmagan hasharga shikoyat qila olmaydi (404)', async () => {
-    await setFee(5000);
-    try {
-      const unpaid = await createHashar(owner);
-      assert.equal(unpaid.payment_status, 'unpaid');
-      assert.equal((await report(reporter, { target_type: 'hashar', target_id: unpaid.id, reason: 'spam' })).status, 404);
-    } finally {
-      await setFee(0);
-    }
-  });
 });
 
 describe('admin: shikoyatlar ro\'yxati va hal qilish', () => {
@@ -137,7 +125,6 @@ describe('admin: shikoyatlar ro\'yxati va hal qilish', () => {
   let rep;
 
   before(async () => {
-    await setFee(0);
     owner = await register(`Adm Shik Ega ${RUN}`);
     reporter = await register(`Adm Shik Yub ${RUN}`);
     hashar = await createHashar(owner);
@@ -227,7 +214,6 @@ describe('foydalanuvchilarni bloklash', () => {
   let bHashar;
 
   before(async () => {
-    await setFee(0);
     a = await register(`Blok A ${RUN}`);
     b = await register(`Blok B ${RUN}`);
     c = await register(`Blok C ${RUN}`);
@@ -302,7 +288,6 @@ describe('foydalanuvchilarni bloklash', () => {
 
 describe("hisob o'chirilganda shikoyat va bloklar", () => {
   test("shikoyatchi / bloklovchi / bloklangan / shikoyat nishoni o'chadi — qoldiq qatorlarsiz", async () => {
-    await setFee(0);
     const admin = await asAdmin();
     const victim = await register(`O'chuvchi ${RUN}`);
     const other = await register(`Boshqa ${RUN}`);

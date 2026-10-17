@@ -11,8 +11,8 @@ import { isAdmin, requireAuth, requireVerifiedEmail } from './auth.js';
 import { nowMs, sqlTime } from './clock.js';
 import { assertVisible, getMeta } from './hashars.js';
 import { avatarUrl } from './media.js';
-import { siteOrigin } from './payments.js';
 import { limitCheckin } from './ratelimit.js';
+import { initSettingStmts } from './settings.js';
 import { ConflictError, ForbiddenError, HttpError, ValidationError, parseId, readJson, toIso } from './validate.js';
 
 export const WINDOW_MS = 10 * 60 * 1000;
@@ -48,10 +48,7 @@ async function checkinKey(env) {
   if (!secret) {
     const db = env.DB;
     const random = [...crypto.getRandomValues(new Uint8Array(32))].map((b) => b.toString(16).padStart(2, '0')).join('');
-    const [, row] = await db.batch([
-      db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('checkin_secret', ?1)").bind(random),
-      db.prepare("SELECT value FROM settings WHERE key = 'checkin_secret'"),
-    ]);
+    const [, row] = await db.batch(initSettingStmts(db, 'checkin_secret', random));
     secret = row.results[0].value;
   }
   return crypto.subtle.importKey('raw', enc.encode(`hasharchilar-checkin:${secret}`), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -82,6 +79,29 @@ function parseCode(raw) {
   return s;
 }
 
+/**
+ * Davomat havolasi uchun sayt manzili: so'rov kelgan veb-sahifa (Origin — shu host yoki Vite dev),
+ * aks holda SITE_URL (ixtiyoriy env) yoki API ning o'z manzili (sayt va API — bitta Worker).
+ * APK (https://localhost, capacitor://) uchun — sayt manzili.
+ */
+export function siteOrigin(c) {
+  const self = new URL(c.req.url);
+  const origin = c.req.header('origin');
+  if (origin) {
+    try {
+      const o = new URL(origin);
+      if ((o.protocol === 'https:' || o.protocol === 'http:') && (o.host === self.host || o.origin === 'http://localhost:5173')) {
+        return o.origin;
+      }
+    } catch {
+      // buzilgan Origin — e'tiborsiz
+    }
+  }
+  const site = String(c.env?.SITE_URL ?? '').trim().replace(/\/+$/, '');
+  if (/^https?:\/\/[^/\s]+$/.test(site)) return site;
+  return self.origin;
+}
+
 export const checkinRoutes = new Hono();
 
 // GET /api/hashars/:id/checkin-code — faqat tashkilotchi, faqat davomat oynasida →
@@ -94,9 +114,6 @@ checkinRoutes.get('/hashars/:id/checkin-code', requireAuth, async (c) => {
   if (h.creator_id !== user.id) {
     assertVisible(c, h, { allowAdmin: false });
     throw new ForbiddenError('Davomat kodini faqat tashkilotchi ochadi');
-  }
-  if (h.payment_status === 'unpaid') {
-    throw new HttpError(409, "Avval hashar e'loni uchun to'lovni amalga oshiring", null, 'payment_required');
   }
   const now = nowMs(c);
   const w = checkinWindow(h);

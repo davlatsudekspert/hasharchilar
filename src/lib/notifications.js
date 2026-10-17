@@ -98,14 +98,8 @@ export function describeNotification(n) {
       return { kind: 'comment', actor, text: 'izoh qoldirdi', sub: excerpt ? `“${String(excerpt).slice(0, 100)}” · ${title}` : title, link };
     case 'completed':
       return { kind: 'completed', text: 'Siz qatnashgan hashar yakunlandi', sub: title ? `${title} — natijani ko'ring` : "Natijani ko'ring", link };
-    case 'payment_confirmed':
-      return { kind: 'paid', text: "To'lov tasdiqlandi — hashar e'lon qilindi", sub: title, link };
-    case 'payment_cancelled':
-      return { kind: 'cancelled', text: "To'lov bekor qilindi", sub: title, link: hid ? `/tolov/${hid}` : null };
-    case 'published':
-      return { kind: 'published', text: "Hasharingiz e'lon qilindi", sub: title, link };
-    default:
-      return { kind: 'info', text: n.text || 'Yangi bildirishnoma', sub: title, link };
+    default: // eski (olib tashlangan) turdagi bildirishnomalar ham umumiy matn bilan ko'rsatiladi
+      return { kind: 'info', text: 'Yangi bildirishnoma', sub: title, link };
   }
 }
 

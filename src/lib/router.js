@@ -14,8 +14,19 @@ const ROUTES = [
   ['about', /^\/haqida$/],
   ['login', /^\/kirish$/],
   ['notifications', /^\/bildirishnomalar$/],
-  ['payment', /^\/tolov\/(\d+)$/],
 ];
+
+// Eski havolalar (#/tolov/12 — eski bildirishnomalar) → hashar sahifasi
+const LEGACY_HASH = /^#\/?tolov\/(\d+)\/?(\?.*)?$/;
+function redirectLegacyHash() {
+  const m = LEGACY_HASH.exec(window.location.hash);
+  if (!m) return;
+  try {
+    window.history.replaceState(window.history.state, '', `#/hashar/${m[1]}`);
+  } catch {
+    /* e'tiborsiz */
+  }
+}
 
 /** Joriy manzil admin panelmi (#admin yoki #/admin). */
 export const isAdminRoute = (hash = typeof window !== 'undefined' ? window.location.hash : '') =>
@@ -38,6 +49,7 @@ export function parseHash(hash) {
 }
 
 // ---- Holat (useSyncExternalStore uchun barqaror snapshot) ----
+if (typeof window !== 'undefined') redirectLegacyHash();
 let current = parseHash(typeof window !== 'undefined' ? window.location.hash : '');
 let pending = null; // null | 'push' | 'replace' — navigate() boshlagan o'tish
 let lastWasPop = false;
@@ -72,6 +84,7 @@ function emit() {
 }
 
 function onHashChange() {
+  redirectLegacyHash();
   const next = parseHash(window.location.hash);
   const kind = pending;
   lastWasPop = !kind;

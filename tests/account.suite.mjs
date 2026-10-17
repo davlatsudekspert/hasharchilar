@@ -2,7 +2,22 @@
 // tests/api.test.mjs oxirida ulanadi (npm run test:api).
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { RUN, api, hasharForm, register, rnd } from './helpers.mjs';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { BASE, RUN, api, hasharForm, register, rnd } from './helpers.mjs';
+
+// Eski (olib tashlangan to'lov funksiyasidan qolgan) payments qatorlarini faqat lokal D1 ga yozish va o'qish mumkin
+const CAN_D1_EXEC =
+  /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE) && process.env.STORAGE !== 'do' && !process.env.SKIP_D1_EXEC;
+function d1Exec(sql) {
+  const persist = process.env.D1_PERSIST_TO ? ['--persist-to', process.env.D1_PERSIST_TO] : [];
+  return execFileSync('npx', ['wrangler', 'd1', 'execute', 'hasharchilar', '--local', ...persist, '--json', '--command', sql], {
+    cwd: fileURLToPath(new URL('..', import.meta.url)),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, WRANGLER_SEND_METRICS: 'false' },
+  });
+}
 
 const login = (login, password) => api('/api/auth/login', { method: 'POST', json: { login, password } });
 const del = (token, password) => api('/api/me/delete', { method: 'POST', token, json: { password } });
@@ -61,5 +76,23 @@ describe("hisobni o'chirish (POST /api/me/delete)", () => {
     const again = await register(`Qaytgan ${RUN}`, { phone: del1.phone, email: del1.email, password: 'yangi-parol-1' });
     assert.notEqual(again.user.id, del1.user.id);
     assert.equal((await login(del1.phone, 'yangi-parol-1')).status, 200);
+  });
+
+  test("eski payments qatorlari ham o'chadi (moliyaviy yozuv saqlanmaydi)", { skip: CAN_D1_EXEC ? false : 'faqat lokal D1' }, async () => {
+    const u = await register(`Eski to'lov ${RUN}`);
+    const h = await createHashar(u);
+    const keep = await register(`Eski to'lov qoluvchi ${RUN}`);
+    const hk = await createHashar(keep);
+    d1Exec(`INSERT INTO payments (hashar_id, user_id, provider, amount, state) VALUES (${h.id}, ${u.user.id}, 'manual', 500000, 1), (${hk.id}, ${keep.user.id}, 'manual', 500000, 1)`);
+    // Lokal `wrangler d1 execute` dan keyin dev-server ulanishi bir zum uzilishi mumkin ("fetch failed", so'rov serverga
+    // yetmaydi) — shuning uchun so'rov qayta uriniladi (ulanish darajasidagi xatoda hisob hali o'chmagan bo'ladi)
+    let res;
+    for (let i = 0; i < 5 && !res; i++) {
+      res = await del(u.token, u.password).catch(() => null);
+      if (!res) await new Promise((r) => setTimeout(r, 1500));
+    }
+    assert.equal(res?.status, 200, JSON.stringify(res?.data));
+    const rows = JSON.parse(d1Exec(`SELECT user_id, COUNT(*) AS n FROM payments WHERE user_id IN (${u.user.id}, ${keep.user.id}) GROUP BY user_id`))[0].results;
+    assert.deepEqual(rows, [{ user_id: keep.user.id, n: 1 }], "o'chirilgan hisobning payments qatori yo'q, boshqaniki qoladi");
   });
 });

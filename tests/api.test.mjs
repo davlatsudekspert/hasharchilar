@@ -10,11 +10,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomEmail, randomIp, randomPhone, register, rnd, setFee, tashkentDate } from './helpers.mjs';
-
-// v4: hashar e'lon qilish narxi standart 5000 so'm (to'lanmagan hashar ommaga ko'rinmaydi). Bu fayldagi v1–v3
-// testlari hashar darhol e'lon qilinishini kutadi — narx 0 (bepul). To'lov testlari: tests/payments.suite.mjs.
-await setFee(0);
+import { BASE, PNG_AFTER, PNG_BEFORE, RUN, api, hasharForm, randomEmail, randomIp, randomPhone, register, rnd, tashkentDate } from './helpers.mjs';
 
 const IS_LOCAL_SERVER = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE);
 const STORAGE = process.env.STORAGE === 'do' ? 'do' : 'd1'; // serverdagi baza turi
@@ -1268,10 +1264,9 @@ describe('v3: geo proksi', () => {
   });
 });
 
-// ---------- v4 (docs/V4_PLAN.md 3–4-bo'limlar) ----------
+// ---------- v4 (docs/V4_PLAN.md 4-bo'lim) ----------
 // `npm run test:api` fayllar ro'yxati package.json da — v4 testlari shu faylning oxirida (v3 testlaridan keyin)
-// ulanadi: to'lov (narx, ko'rinish, Payme, Click, qo'lda) va saqlanganlar / bildirishnomalar / QR davomat.
-await import('./payments.suite.mjs');
+// ulanadi: saqlanganlar / bildirishnomalar / QR davomat.
 await import('./v4.suite.mjs');
 await import('./account.suite.mjs');
 await import('./reports.suite.mjs');

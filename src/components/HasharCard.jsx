@@ -4,23 +4,10 @@ import { useActions } from '../lib/actions.jsx';
 import { mediaUrl } from '../lib/config.js';
 import { categoryOf } from '../lib/meta.js';
 import { navigate } from '../lib/router.js';
-import { useServerConfig } from '../lib/serverConfig.js';
 import { countdown, cx, dateBadge, formatDateTime, formatKm, isOverdue, statusOf } from '../lib/utils.js';
-import { CATEGORY_ICONS, CheckIcon, ClockIcon, HourglassIcon, MessageIcon, PinIcon, UsersIcon, WalletIcon } from './icons.jsx';
+import { CATEGORY_ICONS, CheckIcon, ClockIcon, MessageIcon, PinIcon, UsersIcon } from './icons.jsx';
 import SaveButton from './SaveButton.jsx';
 import { btn, CategoryChip, Progress, Spinner, StatusBadge } from './ui.jsx';
-
-/** Egasining to'lanmagan hashari (ommaga ko'rinmaydi). */
-export const isUnpaid = (h) => !!h && h.payment_status === 'unpaid';
-
-/** "To'lov kutilmoqda" belgisi (faqat egasiga ko'rinadi). */
-export function UnpaidBadge({ className }) {
-  return (
-    <span className={cx('inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900 dark:bg-amber-400/15 dark:text-amber-300', className)}>
-      <HourglassIcon className="h-3.5 w-3.5" /> To'lov kutilmoqda
-    </span>
-  );
-}
 
 /** Rasm bo'lmasa — kategoriya rangidagi chiroyli fon. */
 export function Thumb({ hashar, className, iconClass = 'h-10 w-10', prefer = 'after' }) {
@@ -50,23 +37,6 @@ export function Thumb({ hashar, className, iconClass = 'h-10 w-10', prefer = 'af
   );
 }
 
-/** Egasining to'lanmagan hashari: "To'lash" (narx 0 bo'lsa — "E'lon qilish", to'lov sahifasida bepul e'lon qilinadi). */
-function PayButton({ hashar: h, className }) {
-  const { hashar_fee: fee, loaded } = useServerConfig();
-  return (
-    <button
-      type="button"
-      onClick={(e) => {
-        e.stopPropagation();
-        navigate(`/tolov/${h.id}`);
-      }}
-      className={className}
-    >
-      <WalletIcon className="h-4 w-4" /> {loaded && !(fee > 0) ? "E'lon qilish" : "To'lash"}
-    </button>
-  );
-}
-
 /** Qatnashish tugmasi (holatga qarab). */
 export function JoinButton({ hashar: h, size = 'md', className, onJoined }) {
   const { join, busyId } = useActions();
@@ -81,7 +51,6 @@ export function JoinButton({ hashar: h, size = 'md', className, onJoined }) {
       </span>
     );
   }
-  if (h.is_owner && isUnpaid(h)) return <PayButton hashar={h} className={cx(btn.cta, sz, className)} />;
   if (h.is_owner) {
     return <span className={cx('inline-flex items-center justify-center rounded-2xl bg-surface-2 font-bold text-ink-2 ring-1 ring-line', sz, className)}>Sizning hasharingiz</span>;
   }
@@ -144,11 +113,7 @@ const HasharCard = forwardRef(function HasharCard({ hashar: h, distance, selecte
           <CategoryChip category={h.category} short className="bg-white/95 text-slate-800 shadow-sm dark:bg-slate-950/80 dark:text-white" />
         </div>
         <div className="absolute right-3 top-3 flex items-center gap-1.5">
-          {isUnpaid(h) ? (
-            <UnpaidBadge className="bg-amber-100/95 shadow-sm dark:bg-slate-950/80" />
-          ) : (
-            <StatusBadge status={statusOf(h)} className="bg-white/95 shadow-sm dark:bg-slate-950/80" />
-          )}
+          <StatusBadge status={statusOf(h)} className="bg-white/95 shadow-sm dark:bg-slate-950/80" />
           <SaveButton hashar={h} variant="overlay" />
         </div>
         <div className="absolute bottom-3 left-3 flex items-end gap-2">
@@ -239,7 +204,7 @@ export function HasharRow({ hashar: h, distance, selected, onClick, action = tru
       <div className="flex min-w-0 flex-1 flex-col py-0.5">
         <div className="flex items-start gap-1.5">
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            {isUnpaid(h) ? <UnpaidBadge className="px-2 py-0.5 text-[11px]" /> : <StatusBadge status={statusOf(h)} className="px-2 py-0.5 text-[11px]" />}
+            <StatusBadge status={statusOf(h)} className="px-2 py-0.5 text-[11px]" />
             <CategoryChip category={h.category} short className="px-2 py-0.5 text-[11px]" />
           </div>
           <SaveButton hashar={h} className="-mr-1.5 -mt-1.5" />

@@ -4,7 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import BeforeAfterSlider from '../components/BeforeAfterSlider.jsx';
 import { checkinOpen, CheckinSheet, OwnerQrSheet } from '../components/Checkin.jsx';
 import Comments from '../components/Comments.jsx';
-import { isUnpaid, JoinButton, Thumb, UnpaidBadge } from '../components/HasharCard.jsx';
+import { JoinButton, Thumb } from '../components/HasharCard.jsx';
 import SaveButton from '../components/SaveButton.jsx';
 import {
   AlertIcon,
@@ -12,7 +12,6 @@ import {
   AwardIcon,
   QrIcon,
   ScanIcon,
-  WalletIcon,
   CalendarIcon,
   CalendarPlusIcon,
   CheckIcon,
@@ -36,8 +35,6 @@ import { useToast } from '../components/Toast.jsx';
 import { Avatar, AvatarStack, btn, CategoryChip, EmptyState, ErrorState, ItemChips, Link, Progress, Spinner, StatusBadge } from '../components/ui.jsx';
 import { useActions } from '../lib/actions.jsx';
 import { useAuth } from '../lib/auth.jsx';
-import { formatSom } from '../lib/payments.js';
-import { useServerConfig } from '../lib/serverConfig.js';
 import { useInView } from '../lib/useInView.js';
 import { api } from '../lib/api.js';
 import { IS_NATIVE, mediaUrl } from '../lib/config.js';
@@ -114,10 +111,6 @@ export default function HasharPage({ route }) {
   const [sheet, setSheet] = useState(null); // null | 'qr' | 'checkin' | 'card'
   const isDesktop = useIsDesktop();
   const { user } = useAuth();
-  const { hashar_fee: fee, loaded: cfgLoaded } = useServerConfig();
-  // Narx 0 ga tushgan (admin sozlamasi): to'lanmagan hashar egasi uni bepul e'lon qiladi (to'lov sahifasi ochilganda
-  // server 'waived' qiladi) — "0 so'm to'lang" ko'rsatilmaydi
-  const freeNow = cfgLoaded && !(fee > 0);
   // Mini xarita (MapLibre ~280 KB gzip) — faqat ekranga yaqinlashganda yuklanadi
   const [mapBoxRef, mapNear] = useInView({ margin: '250px' });
   const [asideMapRef, asideMapNear] = useInView({ margin: '100px' });
@@ -143,11 +136,6 @@ export default function HasharPage({ route }) {
 
   const h = gone ? null : d.data || seed;
 
-  // To'lovdan qaytish (?tolov=1) — egasi to'lov holati sahifasiga
-  const ownerUnpaid = !!h && h.is_owner && isUnpaid(h);
-  useEffect(() => {
-    if (route.query.tolov && h && h.is_owner) navigate(`/tolov/${id}`, { replace: true });
-  }, [route.query.tolov, h, id]);
   // QR havolasi (?checkin=kod): qo'shilgan ko'ngilli uchun tasdiqlash oynasi
   const autoCheckin = useRef(false);
   useEffect(() => {
@@ -246,7 +234,7 @@ export default function HasharPage({ route }) {
     }
   };
 
-  const canQr = h.is_owner && !done && !ownerUnpaid;
+  const canQr = h.is_owner && !done;
   const canCheckin = !h.is_owner && h.joined && !done && !h.checked_in_at && checkinOpen(h);
   const canCard = done && (h.joined || h.is_owner);
 
@@ -274,16 +262,7 @@ export default function HasharPage({ route }) {
   // ---- Asosiy harakat paneli ----
   const primaryActions = (
     <div className="space-y-2.5">
-      {ownerUnpaid ? (
-        <>
-          <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-12 w-full')} data-testid="pay-button">
-            <WalletIcon className="h-5 w-5" /> {freeNow ? "Bepul e'lon qilish" : "To'lash va e'lon qilish"}
-          </button>
-          <button type="button" onClick={() => setMode('delete')} className={cx(btn.dangerSoft, 'h-11 w-full text-sm')}>
-            <TrashIcon className="h-4 w-4" /> Hasharni o'chirish
-          </button>
-        </>
-      ) : h.is_owner && !done ? (
+      {h.is_owner && !done ? (
         <>
           <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 w-full')}>
             <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash ("Keyin" rasmi)
@@ -316,11 +295,7 @@ export default function HasharPage({ route }) {
   );
 
   // Mobil pastki panel uchun ixcham variant
-  const mobileActions = ownerUnpaid ? (
-    <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-12 w-full')}>
-      <WalletIcon className="h-5 w-5" /> {freeNow ? "Bepul e'lon qilish" : fee > 0 ? `To'lash · ${formatSom(fee)}` : "To'lash"}
-    </button>
-  ) : h.is_owner && !done ? (
+  const mobileActions = h.is_owner && !done ? (
     <div className="flex gap-2">
       <button type="button" onClick={() => setMode('complete')} className={cx(btn.primary, 'h-12 flex-1')}>
         <CheckIcon className="h-5 w-5" strokeWidth={2.6} /> Yakunlash
@@ -430,25 +405,6 @@ export default function HasharPage({ route }) {
         </button>
       </div>
 
-      {ownerUnpaid && (
-        <div className="fade-up mb-5 flex flex-col gap-3 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-50 p-4 ring-1 ring-amber-200 sm:flex-row sm:items-center sm:p-5 dark:from-amber-400/10 dark:to-orange-400/5 dark:ring-amber-400/25" data-testid="unpaid-banner">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-amber-400 text-amber-950 shadow-cta">
-            <WalletIcon className="h-6 w-6" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="font-extrabold text-amber-950 dark:text-amber-100">Hasharingiz hali e'lon qilinmagan</p>
-            <p className="mt-0.5 text-sm text-amber-900/80 dark:text-amber-200/80">
-              {freeNow
-                ? "E'lon endi bepul — bir bosishda uni xaritada va ro'yxatda hammaga ko'rinadigan qiling."
-                : `To'lovdan so'ng${fee > 0 ? ` (${formatSom(fee)})` : ''} u xaritada va ro'yxatda hammaga ko'rinadi. Hozircha uni faqat siz ko'rasiz.`}
-            </p>
-          </div>
-          <button type="button" onClick={() => navigate(`/tolov/${h.id}`)} className={cx(btn.cta, 'h-11 shrink-0 px-5')}>
-            <WalletIcon className="h-4 w-4" /> {freeNow ? "Bepul e'lon qilish" : "To'lash"}
-          </button>
-        </div>
-      )}
-
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_380px] lg:items-start">
         {/* ---------- Asosiy ustun ---------- */}
         <div className="min-w-0 space-y-6">
@@ -480,15 +436,6 @@ export default function HasharPage({ route }) {
                 <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 dark:bg-sky-400/15 dark:text-sky-300">
                   <ClockIcon className="h-3.5 w-3.5" /> {left}
                 </span>
-              )}
-              {ownerUnpaid && <UnpaidBadge />}
-              {h.is_owner && h.payment_status === 'paid' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-brand-100 px-2.5 py-1 text-xs font-bold text-brand-800 dark:bg-brand-400/15 dark:text-brand-300">
-                  <WalletIcon className="h-3.5 w-3.5" /> To'langan
-                </span>
-              )}
-              {h.is_owner && h.payment_status === 'waived' && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-800 dark:bg-sky-400/15 dark:text-sky-300">Bepul e'lon</span>
               )}
               {h.is_owner ? (
                 <span className="rounded-full bg-surface-2 px-2.5 py-1 text-xs font-bold text-ink-2 ring-1 ring-line">Siz tashkilotchisiz</span>

@@ -6,10 +6,7 @@ import { test, describe, before } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { ADMIN_PHONE, BASE, PNG_AFTER, RUN, api, asAdmin, hasharForm, register, setFee } from './helpers.mjs';
-
-// v4: bu fayldagi hasharlar darhol e'lon qilinsin (narx 0 — bepul); to'lov testlari: tests/payments.suite.mjs
-await setFee(0);
+import { ADMIN_PHONE, BASE, PNG_AFTER, RUN, api, asAdmin, hasharForm, register } from './helpers.mjs';
 
 // O'tmish sanasini API orqali qo'yib bo'lmaydi — faqat lokal D1 ga `wrangler d1 execute` (DO rejimida o'tkaziladi)
 const CAN_D1_EXEC =
@@ -49,6 +46,34 @@ describe('Admin panel', () => {
     assert.equal(plain.user.is_admin, false);
     const pme = await api('/api/me', { token: plain.token });
     assert.equal(pme.data.user.is_admin, false);
+  });
+
+  test("to'lov / sozlamalar endpoint'lari olib tashlangan (admin uchun ham 404); overview da to'lov maydonlari yo'q", async () => {
+    const o = await api('/api/admin/overview', { token: admin.token });
+    for (const k of ['unpaid', 'payments_paid', 'revenue']) assert.equal(k in o.data, false, k);
+    const owner = await register(`To'lovsiz ${RUN}`); // `plain` hisobining hisoblagichlari boshqa testlarda tekshiriladi
+    const h = await api('/api/hashars', { method: 'POST', token: owner.token, form: hasharForm() });
+    assert.equal(h.status, 201, JSON.stringify(h.data));
+    assert.equal(h.data.payment_status, 'paid');
+    assert.equal((await api(`/api/hashars/${h.data.id}`)).status, 200, "mehmonga darhol ko'rinadi");
+    const gone = [
+      ['GET', '/api/admin/settings'],
+      ['POST', '/api/admin/settings'],
+      ['GET', '/api/admin/payments'],
+      ['POST', `/api/admin/hashars/${h.data.id}/mark-paid`],
+      ['GET', `/api/hashars/${h.data.id}/payment`],
+      ['POST', '/api/payments/payme'],
+      ['POST', '/api/payments/click/prepare'],
+      ['POST', '/api/payments/click/complete'],
+    ];
+    for (const [method, path] of gone) {
+      const r = await api(path, { method, token: admin.token, json: method === 'POST' ? {} : undefined });
+      assert.equal(r.status, 404, `${method} ${path}`);
+    }
+    // ?payment= filtri endi e'tiborsiz (xato ham emas)
+    const f = await api('/api/admin/hashars?payment=unpaid', { token: admin.token });
+    assert.equal(f.status, 200);
+    assert.ok(f.data.items.some((x) => x.id === h.data.id), "filtr yo'q — hamma hashar ro'yxatda");
   });
 
   test('mehmon → 401, oddiy foydalanuvchi → 403', async () => {

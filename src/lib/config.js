@@ -33,7 +33,7 @@ export const IS_IOS = (() => {
 
 /**
  * Do'kon orqali tarqatiladigan build (Google Play yoki App Store): yangilanishni do'kon qiladi,
- * ilova ichida saytdagi APK yoki tashqi to'lov taklif qilinmaydi.
+ * ilova ichida saytdagi APK taklif qilinmaydi.
  */
 export const IS_STORE = IS_PLAY || IS_IOS;
 

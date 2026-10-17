@@ -1,4 +1,4 @@
--- hasharchilar.uz — Cloudflare D1 sxemasi: migrations/*.sql birlashtirilgani (0001_init + 0002_admin + 0003_v3 + 0004_email + 0005_v4 + 0006_reports)
+-- hasharchilar.uz — Cloudflare D1 sxemasi: migrations/*.sql birlashtirilgani (0001_init + 0002_admin + 0003_v3 + 0004_email + 0005_v4 + 0006_reports + 0007_free)
 -- Qo'llash: npx wrangler d1 migrations apply hasharchilar --local | --remote
 -- Eslatma: D1 tashqi kalitlarni (FOREIGN KEY) standart holatda tekshiradi;
 -- LIKE/GLOB shablonlari 50 baytdan oshmasligi kerak (D1 limiti).
@@ -193,7 +193,7 @@ CREATE TABLE payments (
 CREATE INDEX idx_payments_hashar ON payments(hashar_id, provider, state);
 CREATE INDEX idx_payments_statement ON payments(provider, provider_time);
 
--- Admin sozlamalari (hashar_fee — so'm, manual_payment_note) va ichki qiymatlar (checkin_secret)
+-- Ichki qiymatlar (checkin_secret — davomat kodining imzo kaliti)
 CREATE TABLE settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -253,3 +253,8 @@ CREATE TABLE user_blocks (
   PRIMARY KEY (user_id, blocked_id)
 );
 CREATE INDEX idx_user_blocks_blocked ON user_blocks(blocked_id);
+
+-- ---------- 0007_free: hamma narsa bepul ----------
+-- payment_status ustuni va payments jadvali eski ma'lumotlar uchun qoladi (yangi qatorlar yozilmaydi).
+-- Eski to'lanmagan hasharlardan sanasi hali kelmaganlari e'lon qilinadi; o'tib ketganlari yashirin qoladi.
+UPDATE hashars SET payment_status = 'paid' WHERE payment_status = 'unpaid' AND date_time >= date('now');

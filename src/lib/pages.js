@@ -22,7 +22,6 @@ const LOADERS = {
   about: () => import('../pages/AboutPage.jsx'),
   login: () => import('../pages/LoginPage.jsx'),
   notifications: () => import('../pages/NotificationsPage.jsx'),
-  payment: () => import('../pages/PaymentPage.jsx'),
   notfound: () => import('../pages/NotFoundPage.jsx'),
 };
 

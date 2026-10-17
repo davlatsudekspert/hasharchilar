@@ -1,12 +1,10 @@
 // Hashar marshrutlari: ro'yxat, tafsilot, yaratish, qatnashish, yakunlash, o'chirish.
 import { Hono } from 'hono';
-import { assertPaymentClient, isAdmin, requireVerifiedEmail } from './auth.js';
+import { isAdmin, requireVerifiedEmail } from './auth.js';
 import { limitCreate, limitJoin } from './ratelimit.js';
 import { avatarUrl, deletePhotos, mediaUrl, readPhoto, storePhoto } from './media.js';
 import { maybePurgeNotifications, notifyCompletedStmt, notifyJoinStmt } from './notify.js';
-import { paymentInfo } from './payments.js';
 import { closeHasharReportsStmt } from './reportstmts.js';
-import { getSettings } from './settings.js';
 import {
   AuthError,
   ConflictError,
@@ -28,7 +26,6 @@ const LIST_LIMIT = 300;
 const COMPLETED_MIN = 60; // umumiy ro'yxatda bajarilganlar uchun kafolatlangan joy
 const STALE_AFTER_MS = 24 * 60 * 60 * 1000; // sanasidan 1 kun o'tgan PENDING — eskirgan
 const NOT_FOUND = 'Hashar topilmadi';
-const UNPAID_MAX = 5; // egasining bir vaqtdagi to'lanmagan (e'lon qilinmagan) PENDING hasharlari
 
 /** Toshkent vaqti (UTC+5) 'YYYY-MM-DDTHH:MM', `offsetMs` siljish bilan. */
 export const tashkentNow = (offsetMs = 0) => new Date(Date.now() + 5 * 3600e3 + offsetMs).toISOString().slice(0, 16);
@@ -58,8 +55,8 @@ export const hasharSelect = (extra = '') => `
 export const HASHAR_SELECT = hasharSelect();
 
 /**
- * Ommaga ko'rinadigan hashar sharti (h — hashars aliasi, ?1 — joriy foydalanuvchi): to'langan / bepul
- * e'lon qilingan yoki egasining o'zi. To'lanmagan hashar boshqalarga ko'rinmaydi.
+ * Ommaga ko'rinadigan hashar sharti (h — hashars aliasi, ?1 — joriy foydalanuvchi). Yangi hasharlar doim
+ * e'lon qilinadi; eski (0007_free dan oldingi) yashirin qatorlar faqat egasiga ko'rinadi.
  */
 export const VISIBLE_SQL = "(h.payment_status <> 'unpaid' OR h.creator_id = ?1)";
 
@@ -67,7 +64,7 @@ export const VISIBLE_SQL = "(h.payment_status <> 'unpaid' OR h.creator_id = ?1)"
 export const PUBLISHED_SQL = "h.payment_status <> 'unpaid'";
 
 /**
- * To'lanmagan hashar faqat egasiga (va `allowAdmin` bo'lsa administratorga) ko'rinadi; boshqalarga — 404
+ * Eski yashirin ('unpaid') hashar faqat egasiga (va `allowAdmin` bo'lsa administratorga) ko'rinadi; boshqalarga — 404
  * (borligi ham aytilmaydi). `h` — { creator_id, payment_status }.
  */
 export function assertVisible(c, h, { allowAdmin = true } = {}) {
@@ -355,32 +352,13 @@ hasharRoutes.get('/:id', async (c) => {
 });
 
 // POST /api/hashars — multipart: title, description, address, lat, lng, date_time, items, photo?
-// v4: narx (settings.hashar_fee) > 0 bo'lsa hashar 'unpaid' — to'languncha ommaga ko'rinmaydi; javobda
-// `payment: {amount, payme_url?, click_url?, manual_note?, telegram?}`. Narx 0 — darhol 'paid' (bepul).
-// Narx > 0 da v4 dan eski mijoz (to'lov sahifasi yo'q) — 403 `app_update_required`, hech narsa yozilmaydi.
+// Hashar darhol e'lon qilinadi (hamma narsa bepul).
 hasharRoutes.post('/', requireVerifiedEmail, async (c) => {
   const user = c.get('user');
   const db = c.env.DB;
-  const settings = await getSettings(db);
-  const paymentStatus = settings.hashar_fee > 0 ? 'unpaid' : 'paid';
-  if (paymentStatus === 'unpaid') assertPaymentClient(c);
   const form = await readForm(c);
   const f = parseHasharFields(form);
   const photo = await readPhoto(form.get('photo'));
-  if (paymentStatus === 'unpaid') {
-    const row = await db
-      .prepare("SELECT COUNT(*) AS n FROM hashars WHERE creator_id = ?1 AND payment_status = 'unpaid' AND status = 'PENDING'")
-      .bind(user.id)
-      .first();
-    if (row.n >= UNPAID_MAX) {
-      throw new HttpError(
-        409,
-        `To'lanmagan hasharlaringiz ${UNPAID_MAX} tadan oshmasin: avval ularni to'lang yoki o'chiring`,
-        null,
-        'unpaid_limit',
-      );
-    }
-  }
   // Limit faqat to'g'ri so'rovlarga qo'llanadi (xato to'ldirilgan forma kvotani yemaydi)
   await limitCreate(c, user.id);
 
@@ -390,12 +368,12 @@ hasharRoutes.post('/', requireVerifiedEmail, async (c) => {
   const stmts = [
     db
       .prepare(
-        `INSERT INTO hashars (creator_id, title, description, address, lat, lng, date_time, items, category, max_volunteers, payment_status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id`,
+        `INSERT INTO hashars (creator_id, title, description, address, lat, lng, date_time, items, category, max_volunteers)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) RETURNING id`,
       )
       .bind(
         user.id, f.title, f.description, f.address, f.lat, f.lng, f.date_time, JSON.stringify(f.items), f.category,
-        f.max_volunteers, paymentStatus,
+        f.max_volunteers,
       ),
     // Tashkilotchi avtomatik qatnashuvchi
     db.prepare(`INSERT INTO volunteers (hashar_id, user_id) VALUES (${lastId}, ?1)`).bind(user.id),
@@ -419,7 +397,6 @@ hasharRoutes.post('/', requireVerifiedEmail, async (c) => {
     throw err;
   }
   const dto = await loadDto(db, id, user.id);
-  if (paymentStatus === 'unpaid') dto.payment = paymentInfo(c, id, settings);
   return c.json(dto, 201);
 });
 
@@ -436,7 +413,7 @@ hasharRoutes.post('/:id/join', requireVerifiedEmail, async (c) => {
   const [, , cnt, mem] = await db.batch([
     // Egasiga bildirishnoma — INSERT dan oldin, aynan o'sha shartlar bilan (faqat yangi qo'shilishda)
     notifyJoinStmt(db, id, uid),
-    // Shartlar qayta tekshiriladi (bitta tranzaksiya): parallel yakunlash/o'chirish, to'lov va joy chegarasi
+    // Shartlar qayta tekshiriladi (bitta tranzaksiya): parallel yakunlash/o'chirish va joy chegarasi
     db
       .prepare(
         `INSERT OR IGNORE INTO volunteers (hashar_id, user_id)
@@ -468,7 +445,7 @@ hasharRoutes.delete('/:id/join', requireVerifiedEmail, async (c) => {
   await limitJoin(c, uid);
   const h = await getMeta(db, id);
   if (h.payment_status === 'unpaid' && h.creator_id !== uid) {
-    // To'lov qaytarilib, hashar yana yashirilgan bo'lishi mumkin: qatnashuvchi baribir chiqa oladi
+    // Hashar yashirilgan bo'lsa ham qatnashuvchi baribir chiqa oladi
     const mem = await db.prepare('SELECT 1 AS ok FROM volunteers WHERE hashar_id = ?1 AND user_id = ?2').bind(id, uid).first();
     if (!mem) throw new NotFoundError(NOT_FOUND);
   }
@@ -493,9 +470,6 @@ hasharRoutes.post('/:id/complete', requireVerifiedEmail, async (c) => {
     throw new ForbiddenError('Faqat tashkilotchi yakunlay oladi');
   }
   if (h.status === 'COMPLETED') throw new ConflictError('Bu hashar allaqachon yakunlangan');
-  if (h.payment_status === 'unpaid') {
-    throw new HttpError(409, "Avval hashar e'loni uchun to'lovni amalga oshiring", null, 'payment_required');
-  }
 
   const form = await readForm(c);
   const photo = await readPhoto(form.get('photo'));
@@ -546,7 +520,6 @@ hasharRoutes.delete('/:id', requireVerifiedEmail, async (c) => {
 
   const { results: media } = await db.prepare('SELECT r2_key FROM hashar_media WHERE hashar_id = ?1').bind(id).all();
   // Bog'liq qatorlar oldindan o'chiriladi: meta.changes (o'chirilgan hashar soni) FK kaskadi bilan ortib ketmasin.
-  // To'lovlar (payments) o'chirilmaydi — moliyaviy tarix.
   const pending = "EXISTS (SELECT 1 FROM hashars WHERE id = ?1 AND status = 'PENDING')";
   const [, , , , , , delHashar] = await db.batch([
     // Tranzaksiya: hashar PENDING bo'lsagina hammasi o'chadi

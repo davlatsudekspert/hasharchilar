@@ -1,9 +1,9 @@
-// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar / To'lovlar / Shikoyatlar / Sozlamalar.
+// Admin panel (#admin): sarlavha, kirish tekshiruvi va tablar — Umumiy / Foydalanuvchilar / Hasharlar / Shikoyatlar.
 // Alohida bundle (main.jsx da React.lazy) — oddiy foydalanuvchi uni yuklamaydi.
 import { useEffect, useRef, useState } from 'react';
 import AuthModal from '../components/AuthModal.jsx';
 import { Logo } from '../components/Header.jsx';
-import { ArrowLeftIcon, FlagIcon, LeafIcon, SettingsIcon, ShieldIcon, UsersIcon, WalletIcon } from '../components/icons.jsx';
+import { ArrowLeftIcon, FlagIcon, LeafIcon, ShieldIcon, UsersIcon } from '../components/icons.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { btn, Spinner } from '../components/ui.jsx';
 import { useAuth } from '../lib/auth.jsx';
@@ -13,19 +13,15 @@ import { closeAdmin } from '../lib/router.js';
 import { cx, formatPhone } from '../lib/utils.js';
 import HasharsTab from './HasharsTab.jsx';
 import OverviewTab from './OverviewTab.jsx';
-import PaymentsTab from './PaymentsTab.jsx';
 import ReportsTab from './ReportsTab.jsx';
-import SettingsTab from './SettingsTab.jsx';
 import UsersTab from './UsersTab.jsx';
 
-// short — telefon uchun qisqa yorliq (6 ta tab bir qatorga sig'adi, gorizontal aylantirish shart emas)
+// short — telefon uchun qisqa yorliq (4 ta tab bir qatorga sig'adi, gorizontal aylantirish shart emas)
 const TABS = [
   { id: 'overview', label: 'Umumiy', short: 'Umumiy', icon: ShieldIcon },
   { id: 'users', label: 'Foydalanuvchilar', short: "A'zolar", icon: UsersIcon },
   { id: 'hashars', label: 'Hasharlar', short: 'Hashar', icon: LeafIcon },
-  { id: 'payments', label: "To'lovlar", short: "To'lov", icon: WalletIcon },
   { id: 'reports', label: 'Shikoyatlar', short: 'Shikoyat', icon: FlagIcon },
-  { id: 'settings', label: 'Sozlamalar', short: 'Sozlama', icon: SettingsIcon },
 ];
 
 /** #admin/users → 'users' (noma'lum bo'lsa 'overview'). */
@@ -113,7 +109,7 @@ export default function AdminApp() {
     };
   }, []);
 
-  // Manzil qo'lda o'zgarsa (#admin/settings) — tab ham almashadi
+  // Manzil qo'lda o'zgarsa (#admin/users) — tab ham almashadi
   useEffect(() => {
     const onHash = () => setTab(tabFromHash());
     window.addEventListener('hashchange', onHash);
@@ -178,10 +174,10 @@ export default function AdminApp() {
             <p className="mt-0.5 text-sm text-slate-500">Foydalanuvchilar va hasharlarni boshqarish</p>
           </div>
         </div>
-        {/* Telefonda (md dan kichik): 5 ustunli panel — ikonka ustida qisqa yorliq, hammasi ko'rinadi;
+        {/* Telefonda (md dan kichik): 4 ustunli panel — ikonka ustida qisqa yorliq, hammasi ko'rinadi;
             kattaroq ekranda — gorizontal "pill"lar (sig'masa aylantiriladi, aktiv tab ko'rinishga suriladi) */}
         <div ref={tabsRef} role="tablist" aria-label="Admin bo'limlari" className="no-scrollbar -mx-4 mt-4 overflow-x-auto px-4">
-          <div className="grid grid-cols-6 gap-1 rounded-2xl bg-slate-200/60 p-1 md:inline-flex md:min-w-0">
+          <div className="grid grid-cols-4 gap-1 rounded-2xl bg-slate-200/60 p-1 md:inline-flex md:min-w-0">
             {TABS.map((t) => (
               <button
                 key={t.id}
@@ -220,9 +216,7 @@ export default function AdminApp() {
           )}
           {tab === 'users' && <UsersTab key={userQuery.key} meId={user.id} initialQuery={userQuery.q} />}
           {tab === 'hashars' && <HasharsTab />}
-          {tab === 'payments' && <PaymentsTab />}
           {tab === 'reports' && <ReportsTab onCount={setOpenReports} />}
-          {tab === 'settings' && <SettingsTab />}
         </div>
       </>
     );

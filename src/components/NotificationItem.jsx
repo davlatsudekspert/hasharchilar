@@ -1,15 +1,13 @@
 // Bildirishnoma qatori (header ochiladigan oynasi va #/bildirishnomalar sahifasi uchun) + kunlar bo'yicha guruhlash.
 import { describeNotification, isRead } from '../lib/notifications.js';
 import { cx, formatDay, tashkentNow, timeAgo } from '../lib/utils.js';
-import { AlertIcon, BellIcon, CheckCircleIcon, CheckIcon, MessageIcon, SparklesIcon, UsersIcon, WalletIcon } from './icons.jsx';
+import { BellIcon, CheckCircleIcon, CheckIcon, MessageIcon, SparklesIcon, UsersIcon } from './icons.jsx';
 import { Avatar } from './ui.jsx';
 
 const KIND = {
   join: { icon: UsersIcon, cls: 'bg-sky-500' },
   comment: { icon: MessageIcon, cls: 'bg-violet-500' },
   completed: { icon: CheckCircleIcon, cls: 'bg-brand-600' },
-  paid: { icon: WalletIcon, cls: 'bg-brand-600' },
-  cancelled: { icon: AlertIcon, cls: 'bg-red-500' },
   published: { icon: SparklesIcon, cls: 'bg-amber-500' },
   info: { icon: BellIcon, cls: 'bg-slate-500' },
 };

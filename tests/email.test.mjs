@@ -25,12 +25,8 @@ import {
   randomPhone,
   register,
   registerLegacy,
-  setFee,
   verifyEmail,
 } from './helpers.mjs';
-
-// v4: bu fayldagi hasharlar darhol e'lon qilinsin (narx 0 — bepul)
-await setFee(0);
 
 const CODE_WRONG = "Kod noto'g'ri";
 const CODE_EXPIRED = "Kod eskirgan, yangisini so'rang";
@@ -48,8 +44,7 @@ test('GET /api/config → email_enabled: true (EMAIL_MOCK)', async () => {
   const r = await api('/api/config');
   assert.equal(r.status, 200);
   assert.equal(r.data.email_enabled, true, 'server EMAIL_MOCK:1 bilan ishga tushirilsin');
-  // v4 maydonlari (batafsil — tests/payments.suite.mjs)
-  assert.deepEqual(Object.keys(r.data).sort(), ['email_enabled', 'hashar_fee', 'manual_payment_note', 'payment_telegram', 'payments']);
+  assert.deepEqual(r.data, { email_enabled: true }, "faqat email_enabled (eski mijozlar boshqa maydonlarsiz ham ishlaydi)");
   assert.equal(r.headers.get('cache-control'), 'no-store');
 });
 
@@ -723,14 +718,7 @@ describe("Email xizmati o'chiq (RESEND_API_KEY yo'q, EMAIL_MOCK emas)", () => {
   test("config false; eski ro'yxat ishlaydi; email marshrutlari 503; yozuvchi amallar cheklanmaydi", async () => {
     assert.notEqual(url, BASE);
     const cfg = await call('/api/config');
-    // v4: narx standart 5000 so'm; to'lov kalitlari yo'q — faqat qo'lda to'lov (standart Telegram admin orqali)
-    assert.deepEqual(cfg.data, {
-      email_enabled: false,
-      hashar_fee: 5000,
-      payments: { payme: false, click: false, manual: true },
-      manual_payment_note: '',
-      payment_telegram: 'developer_alii',
-    });
+    assert.deepEqual(cfg.data, { email_enabled: false });
 
     const phone = randomPhone();
     const reg = await call('/api/auth/register', { method: 'POST', json: { name: 'Emailsiz', phone, password: 'parol123' } });
@@ -752,33 +740,20 @@ describe("Email xizmati o'chiq (RESEND_API_KEY yo'q, EMAIL_MOCK emas)", () => {
       assert.deepEqual(r.data, disabled, path);
     }
 
-    // Regressiya: email o'chiq bo'lsa ham eski v2 (belgisiz) / v3 APK narx > 0 da hashar yarata olmaydi — to'lov
-    // sahifasi yo'q, yashirin to'lanmagan hasharni "e'lon qilindi" deb ko'rsatardi
+    // Eski (belgisiz v2 / v3) APK ham hashar yarata oladi: darhol e'lon qilinadi, javobda `payment` yo'q
     for (const client of [0, 3]) {
       const old = await call('/api/hashars', { method: 'POST', token: reg.data.token, form: hasharForm(), client });
-      assert.equal(old.status, 403, `client=${client}: ${JSON.stringify(old.data)}`);
-      assert.equal(old.data.code, 'app_update_required');
+      assert.equal(old.status, 201, `client=${client}: ${JSON.stringify(old.data)}`);
+      assert.equal(old.data.payment_status, 'paid');
+      assert.equal('payment' in old.data, false);
+      assert.equal((await call(`/api/hashars/${old.data.id}`)).status, 200, 'mehmonga ko\'rinadi');
     }
     // Email tasdiqlanmagan bo'lsa ham hashar yaratish va izoh yozish mumkin (qoida faqat email yoqilganda)
     const h = await call('/api/hashars', { method: 'POST', token: reg.data.token, form: hasharForm() });
     assert.equal(h.status, 201, JSON.stringify(h.data));
-    // v4: standart narx — hashar to'languncha e'lon qilinmaydi; provayderlar sozlanmagan → havolalar yo'q, Telegram admin standart
-    assert.equal(h.data.payment_status, 'unpaid');
-    assert.deepEqual(h.data.payment, { amount: 5000, telegram: 'developer_alii' });
-    assert.equal((await call(`/api/hashars/${h.data.id}`)).status, 404, "to'lanmagan hashar mehmonga ko'rinmaydi");
-    // Kalitsiz Payme / Click callback'lari hech narsa qilmaydi
-    const pm = await fetch(`${url}/api/payments/payme`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Basic ${Buffer.from('Paycom:').toString('base64')}` },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'CheckPerformTransaction', params: { amount: 500000, account: { hashar_id: String(h.data.id) } } }),
-    });
-    assert.equal((await pm.json()).error.code, -32504);
-    const ck = await fetch(`${url}/api/payments/click/prepare`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ click_trans_id: '1', service_id: '1', merchant_trans_id: String(h.data.id), amount: '5000', action: '0', sign_time: 'x', sign_string: 'x' }),
-    });
-    assert.equal((await ck.json()).error, -8);
+    assert.equal(h.data.payment_status, 'paid');
+    assert.equal('payment' in h.data, false);
+    assert.equal((await call(`/api/hashars/${h.data.id}`)).status, 200, "hashar darhol mehmonga ko'rinadi");
     const cm = await call(`/api/hashars/${h.data.id}/comments`, { method: 'POST', token: reg.data.token, json: { body: 'Salom' } });
     assert.equal(cm.status, 201);
     const login = await call('/api/auth/login', { method: 'POST', json: { login: phone, password: 'parol123' } });

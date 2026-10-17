@@ -32,14 +32,13 @@ const TITLES = {
   about: 'Loyiha haqida',
   login: 'Kirish',
   notifications: 'Bildirishnomalar',
-  payment: "To'lov",
   notfound: 'Sahifa topilmadi',
 };
 
 // "Emailingizni tasdiqlang" eslatmasi faqat ko'rish sahifalarida (xarita — to'liq ekran, yaratish/kirish — o'z oqimi)
-const NO_EMAIL_BANNER = new Set(['map', 'create', 'login', 'payment']);
+const NO_EMAIL_BANNER = new Set(['map', 'create', 'login']);
 // Pastki tab bar ko'rinmaydigan sahifalar (o'z pastki tugmalari bor)
-const NO_TABBAR = new Set(['create', 'payment']);
+const NO_TABBAR = new Set(['create']);
 
 function EmailBannerSlot({ route }) {
   const { user } = useAuth();
@@ -84,7 +83,7 @@ export default function App() {
   }, []);
 
   const isMap = route.name === 'map';
-  const showFooter = !isMap && route.name !== 'create' && route.name !== 'payment';
+  const showFooter = !isMap && route.name !== 'create';
   const showTabBar = !NO_TABBAR.has(route.name);
 
   return (

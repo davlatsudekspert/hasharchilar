@@ -1,4 +1,4 @@
-// Muvaffaqiyat animatsiyasi: aksent doira + chiziladigan belgi + konfetti nuqtalari (to'lov, davomat).
+// Muvaffaqiyat animatsiyasi: aksent doira + chiziladigan belgi + konfetti nuqtalari (davomat).
 const DOTS = [
   [-70, -54, '#fbbf24'],
   [64, -60, 'var(--a-400)'],

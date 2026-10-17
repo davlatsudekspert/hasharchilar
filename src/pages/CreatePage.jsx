@@ -15,7 +15,6 @@ import {
   PlusIcon,
   SparklesIcon,
   UsersIcon,
-  WalletIcon,
   XIcon,
 } from '../components/icons.jsx';
 import { LocationPicker } from '../components/map/index.jsx';
@@ -28,13 +27,10 @@ import { useAuth } from '../lib/auth.jsx';
 import { CATEGORIES } from '../lib/meta.js';
 import { registerBackHandler } from '../lib/modals.js';
 import { haptic, onRestoredPhoto, peekRestoredPhoto } from '../lib/native.js';
-import { formatSom } from '../lib/payments.js';
-import { useServerConfig } from '../lib/serverConfig.js';
 import { goBack, navigate } from '../lib/router.js';
 import { storage } from '../lib/storage.js';
 import { invalidate, prime } from '../lib/store.js';
 import { cx, formatDateLong, TASHKENT, tashkentNow, tashkentTomorrow } from '../lib/utils.js';
-import { IS_IOS } from '../lib/config.js';
 
 const SUGGESTED_ITEMS = ["Qo'lqop", 'Belkurak', 'Axlat qoplari', 'Supurgi', "Ko'chat", 'Chelak', "Bo'yoq", "Cho'tka", 'Suv', 'Tirma', 'Etik'];
 const STEPS = [
@@ -84,9 +80,6 @@ const initial = () => {
 export default function CreatePage() {
   const { user, ready } = useAuth();
   const { requireVerified } = useActions();
-  const { hashar_fee: serverFee } = useServerConfig();
-  // iOS (App Store): narx ilova ichida ko'rsatilmaydi — e'lonni administrator tasdiqlaydi
-  const fee = IS_IOS ? 0 : serverFee;
   const toast = useToast();
   const [step, setStep] = useState(0);
   const [f, setF] = useState(initial);
@@ -210,17 +203,9 @@ export default function CreatePage() {
       storage.remove(DRAFT_KEY);
       haptic('success');
       invalidate('hashars', 'stats', 'me:', 'user:', 'leaderboard');
-      const { payment, ...dto } = created;
-      prime(`hashar:${created.id}`, dto);
-      if (created.payment_status === 'unpaid') {
-        // To'lov sahifasi darhol (server javobidagi havolalar bilan) ochiladi
-        prime(`payment:${created.id}`, { hashar_id: created.id, status: 'unpaid', history: [], ...(payment || {}), amount: (payment && payment.amount) || fee });
-        toast("Hashar yaratildi — e'lon qilish uchun to'lovni amalga oshiring", 'info');
-        navigate(`/tolov/${created.id}`, { replace: true });
-      } else {
-        toast("Hashar e'lon qilindi! 🎉");
-        navigate(`/hashar/${created.id}`, { replace: true });
-      }
+      prime(`hashar:${created.id}`, created);
+      toast("Hashar e'lon qilindi! 🎉");
+      navigate(`/hashar/${created.id}`, { replace: true });
     } catch (e) {
       setSubmitError(e.message);
       haptic('error');
@@ -267,15 +252,6 @@ export default function CreatePage() {
           </p>
           <h1 className="truncate text-2xl font-extrabold text-ink sm:text-3xl">Hashar e'lon qilish</h1>
         </div>
-        <span
-          className={cx(
-            'hidden shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-extrabold ring-1 min-[400px]:inline-flex',
-            fee > 0 ? 'bg-amber-50 text-amber-900 ring-amber-200 dark:bg-amber-400/10 dark:text-amber-200 dark:ring-amber-400/25' : 'bg-brand-soft text-brand ring-brand-line',
-          )}
-          data-testid="create-fee"
-        >
-          <WalletIcon className="h-3.5 w-3.5" /> {fee > 0 ? formatSom(fee) : 'Bepul'}
-        </span>
         <button type="button" onClick={() => goBack('/')} aria-label="Bekor qilish" className="grid h-11 w-11 place-items-center rounded-2xl text-ink-3 hover:bg-surface-2">
           <XIcon className="h-5 w-5" />
         </button>
@@ -301,16 +277,6 @@ export default function CreatePage() {
           </li>
         ))}
       </ol>
-
-      {fee > 0 && (
-        <p className="mt-3 flex items-start gap-1.5 text-xs font-semibold leading-snug text-ink-3 min-[400px]:hidden">
-          <WalletIcon className="mt-px h-3.5 w-3.5 shrink-0 text-amber-600" />
-          {/* Bitta qator elementi — flex ichida matn bo'laklari alohida ustunlarga bo'linmasin */}
-          <span className="min-w-0">
-            E'lon narxi: <b className="whitespace-nowrap text-ink">{formatSom(fee)}</b> · to'lovdan so'ng hammaga ko'rinadi
-          </span>
-        </p>
-      )}
 
       <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-start">
         <div key={step} className="page-enter rounded-[28px] border border-line bg-surface p-5 shadow-soft sm:p-7">
@@ -584,7 +550,6 @@ export default function CreatePage() {
                     ['Vaqt', formatDateLong(`${f.date}T${f.time}`)],
                     ["Ko'ngillilar", f.max ? `${f.max} kishigacha` : 'Cheklanmagan'],
                     ['Narsalar', f.items.join(', ') || '—'],
-                    ["E'lon narxi", fee > 0 ? formatSom(fee) : 'Bepul'],
                   ].map(([k, v]) => (
                     <div key={k} className="grid grid-cols-[110px_1fr] gap-2">
                       <dt className="text-ink-3">{k}</dt>
@@ -593,19 +558,6 @@ export default function CreatePage() {
                   ))}
                 </dl>
               </div>
-              {fee > 0 && (
-                <div className="flex gap-3 rounded-2xl bg-amber-50 p-4 ring-1 ring-amber-200 dark:bg-amber-400/10 dark:ring-amber-400/25" data-testid="fee-notice">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-400 text-amber-950">
-                    <WalletIcon className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 text-sm">
-                    <p className="font-extrabold text-amber-950 dark:text-amber-100">E'lon narxi — {formatSom(fee)}</p>
-                    <p className="mt-0.5 text-amber-900/80 dark:text-amber-200/80">
-                      "E'lon qilish" dan keyin to'lov sahifasi ochiladi (Telegram orqali admin tasdiqlaydi). To'lovgacha hasharni faqat siz ko'rasiz.
-                    </p>
-                  </div>
-                </div>
-              )}
               {submitError && (
                 <p role="alert" className="rounded-2xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:bg-red-500/10 dark:text-red-300">
                   {submitError}
@@ -625,7 +577,7 @@ export default function CreatePage() {
               </button>
             ) : (
               <button type="button" onClick={submit} disabled={busy || photoBusy} className={cx(btn.cta, 'h-12 px-7')}>
-                {busy ? <Spinner /> : <CheckIcon className="h-5 w-5" strokeWidth={2.6} />} E'lon qilish{fee > 0 ? ` · ${formatSom(fee)}` : ''}
+                {busy ? <Spinner /> : <CheckIcon className="h-5 w-5" strokeWidth={2.6} />} E'lon qilish
               </button>
             )}
           </div>
@@ -659,7 +611,6 @@ export default function CreatePage() {
           </div>
           <p className="mt-3 text-xs leading-relaxed text-ink-3">
             Siz tashkilotchi sifatida avtomatik qatnashuvchi bo'lasiz. Qoralama avtomatik saqlanadi.
-            {fee > 0 ? ` E'lon narxi — ${formatSom(fee)}, to'lovdan so'ng hashar hammaga ko'rinadi.` : ''}
           </p>
         </aside>
       </div>
@@ -676,7 +627,7 @@ export default function CreatePage() {
             </button>
           ) : (
             <button type="button" onClick={submit} disabled={busy || photoBusy} className={cx(btn.cta, 'h-13 flex-1 py-3.5 text-base')} data-testid="create-submit">
-              {busy ? <Spinner /> : <CheckIcon className="h-5 w-5" strokeWidth={2.6} />} E'lon qilish{fee > 0 ? ` · ${formatSom(fee)}` : ''}
+              {busy ? <Spinner /> : <CheckIcon className="h-5 w-5" strokeWidth={2.6} />} E'lon qilish
             </button>
           )}
         </div>

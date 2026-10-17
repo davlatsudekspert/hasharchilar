@@ -1,6 +1,6 @@
-// Joriy vaqt manbai (to'lov timeout'lari, QR davomat oynalari).
+// Joriy vaqt manbai (QR davomat oynalari).
 // Testlar uchun (FAQAT EMAIL_MOCK=1 bo'lganda): `x-test-now` sarlavhasi (unix ms) bilan vaqtni siljitish mumkin —
-// masalan, Payme 12 soatlik timeout yoki davomat kodining keyingi 10 daqiqalik oynasi. Production'da e'tiborsiz.
+// masalan, davomat kodining keyingi 10 daqiqalik oynasi. Production'da e'tiborsiz.
 import { isEmailMock } from './email.js';
 
 const TEST_NOW_RE = /^\d{12,14}$/;

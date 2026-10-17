@@ -18,7 +18,6 @@ const PAGE_ROUTES = {
   AboutPage: '^/haqida$',
   LoginPage: '^/kirish$',
   NotificationsPage: '^/bildirishnomalar$',
-  PaymentPage: '^/tolov/\\d+$',
 };
 
 /**

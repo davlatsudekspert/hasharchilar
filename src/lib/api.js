@@ -6,8 +6,7 @@ import { storage, TOKEN_KEY } from './storage.js';
 
 /**
  * Mijoz versiyasi (worker/auth.js clientVersion) — eski APK'ni ajratish uchun.
- * 3 — email tasdiqlash oynasi bor (v3); 4 — hashar e'lon qilish to'lovi bor (v4: narx > 0 bo'lsa server
- * 4 dan eski mijozga hashar yaratishni bermaydi — "Ilovani yangilang").
+ * 3 — email tasdiqlash oynasi bor (v3); 4 — saqlanganlar, bildirishnomalar va QR davomat bor (v4).
  * Sarlavha emas, `?client=4` query: CORS preflight ro'yxatini o'zgartirmaydi, shuning uchun
  * yangi APK eski (yoki orqaga qaytarilgan) worker bilan ham ishlaydi.
  */
@@ -214,9 +213,6 @@ export const api = {
   unreadCount: () => request('/me/notifications/unread-count'),
   markRead: (body) => request('/me/notifications/read', { method: 'POST', json: body }),
 
-  // To'lov (hashar e'lon qilish narxi)
-  hasharPayment: (id) => request(`/hashars/${id}/payment`),
-
   // QR davomat
   checkinCode: (id) => request(`/hashars/${id}/checkin-code`),
   attendance: (id) => request(`/hashars/${id}/checkins`),
@@ -239,9 +235,5 @@ export const api = {
     deleteComment: (id) => request(`/admin/comments/${id}`, { method: 'DELETE' }),
     reports: (params) => request(`/admin/reports${qs(params)}`),
     resolveReport: (id, status) => request(`/admin/reports/${id}/resolve`, { method: 'POST', json: { status } }),
-    payments: (params) => request(`/admin/payments${qs(params)}`),
-    markPaid: (id, body = {}) => request(`/admin/hashars/${id}/mark-paid`, { method: 'POST', json: body }),
-    settings: () => request('/admin/settings'),
-    saveSettings: (body) => request('/admin/settings', { method: 'POST', json: body }),
   },
 };

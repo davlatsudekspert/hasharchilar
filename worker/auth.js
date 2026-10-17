@@ -46,14 +46,6 @@ export const clientVersion = (c) => {
   if (CLIENT_QUERY_RE.test(q)) return Number(q);
   return Number(CLIENT_RE.exec(c.req.header('x-client') || '')?.[1]) || 0;
 };
-// v4 mijozda (sayt va APK) hashar e'lon qilish to'lovi bor. Eski v3/v2 APK to'lanmagan (hech kimga ko'rinmaydigan)
-// hasharni "e'lon qilindi" deb ko'rsatadi va uni to'lay olmaydi — narx > 0 bo'lsa unga hashar yaratish berilmaydi.
-const PAYMENT_CLIENT_VERSION = 4;
-const PAYMENT_UPDATE_MESSAGE = "Ilovani yangilang: hashar e'lon qilish endi to'lov orqali";
-/** Mijozda to'lov sahifasi bor (v4+), aks holda 403 `app_update_required`. */
-export function assertPaymentClient(c) {
-  if (clientVersion(c) < PAYMENT_CLIENT_VERSION) throw new HttpError(403, PAYMENT_UPDATE_MESSAGE, null, 'app_update_required');
-}
 const EMAIL_REQUIRED_MESSAGE = "Ilovani yangilang: ro'yxatdan o'tish endi email orqali";
 const PHONE_TAKEN = "Bu telefon raqami allaqachon ro'yxatdan o'tgan";
 const EMAIL_TAKEN = "Bu email allaqachon boshqa hisobga bog'langan";
@@ -557,7 +549,7 @@ authRoutes.post('/me/password', requireAuth, async (c) => {
 // POST /api/me/delete — {password} → {ok: true}. Hisobni va barcha ma'lumotlarini butunlay o'chiradi
 // (Google Play: hisobni o'chirish talabi). Parol tekshiruvi /me/password bilan bir xil limitlar ostida.
 // DB'dagi hamma narsa bitta tranzaksiyada (admin DELETE /users/:id bilan bir xil); R2 rasmlari undan keyin,
-// xato bo'lsa log'ga yoziladi. To'lovlar (payments) qoladi — moliyaviy yozuv.
+// xato bo'lsa log'ga yoziladi.
 authRoutes.post('/me/delete', requireAuth, async (c) => {
   const user = c.get('user');
   const db = c.env.DB;
@@ -583,6 +575,7 @@ authRoutes.post('/me/delete', requireAuth, async (c) => {
     ...purgeUserReportsStmts(db, id), // shikoyatlar va bloklar (izohlar o'chishidan oldin)
     db.prepare(`DELETE FROM saves WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare(`DELETE FROM notifications WHERE hashar_id IN (${own}) OR user_id = ?1 OR actor_id = ?1`).bind(id),
+    db.prepare(`DELETE FROM payments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),
     db.prepare('DELETE FROM sessions WHERE user_id = ?1').bind(id),
     db.prepare('DELETE FROM email_otps WHERE user_id = ?1 OR email = (SELECT email FROM users WHERE id = ?1)').bind(id),
     db.prepare(`DELETE FROM comments WHERE hashar_id IN (${own}) OR user_id = ?1`).bind(id),

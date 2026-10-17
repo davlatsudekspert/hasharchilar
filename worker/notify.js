@@ -1,4 +1,4 @@
-// Bildirishnomalar markazi: yaratish (join, comment, completed, payment_confirmed, payment_cancelled, published)
+// Bildirishnomalar markazi: yaratish (join, comment, completed)
 // va /api/me/notifications* marshrutlari. Qoidalar: o'ziga bildirishnoma yuborilmaydi (actor = qabul qiluvchi
 // bo'lsa yozilmaydi), bloklangan foydalanuvchiga yozilmaydi, ro'yxat sahifasi ≤ 50 ta.
 import { Hono } from 'hono';
@@ -14,21 +14,6 @@ const KEEP_DAYS = 180; // bundan eski bildirishnomalar vaqti-vaqti bilan o'chiri
 
 // Qabul qiluvchi bloklanmagan foydalanuvchi bo'lsin (r.uid — qabul qiluvchi ID si)
 const ACTIVE_USER = 'EXISTS (SELECT 1 FROM users ru WHERE ru.id = r.uid AND ru.blocked_at IS NULL)';
-
-/**
- * Hashar egasiga bildirishnoma (to'lov / e'lon). `cond` — qo'shimcha SQL sharti (?1 — hashar ID si,
- * keyingi parametrlar `params` dan ?2, ?3 ...). Natija — db.batch uchun so'rov.
- */
-export function notifyOwnerStmt(db, { type, hasharId, extra = {}, cond = '1', params = [] }) {
-  return db
-    .prepare(
-      `INSERT INTO notifications (user_id, type, hashar_id, data)
-       SELECT r.uid, '${type}', r.hid, json_patch(json_object('title', r.title), ?${params.length + 2})
-       FROM (SELECT h.creator_id AS uid, h.id AS hid, h.title FROM hashars h WHERE h.id = ?1) r
-       WHERE ${ACTIVE_USER} AND (${cond})`,
-    )
-    .bind(hasharId, ...params, JSON.stringify(extra));
-}
 
 /**
  * Hasharga kimdir qo'shildi → egasiga. Volunteers INSERT dan OLDIN, xuddi shu shartlar bilan (bitta batch):
@@ -124,14 +109,8 @@ export function notificationText(type, { actor, title, data = {} }) {
       return `${who} izoh qoldirdi: ${t}`;
     case 'completed':
       return `${t} hashari yakunlandi. Ishtirokingiz uchun rahmat!`;
-    case 'payment_confirmed':
-      return `To'lov tasdiqlandi${data.amount ? ` (${data.amount} so'm)` : ''} — ${t} hashari e'lon qilindi`;
-    case 'payment_cancelled':
-      return `To'lov bekor qilindi — ${t} hashari e'londan olindi`;
-    case 'published':
-      return `${t} hashari e'lon qilindi`;
-    default:
-      return t;
+    default: // eski turdagi (olib tashlangan) bildirishnomalar
+      return `Yangilik: ${t}`;
   }
 }
 

@@ -72,7 +72,7 @@ async function start() {
     loadPage(first.name).catch(() => {});
     preloadRouteData(first, { authed: !!getToken() });
   }
-  loadServerConfig(); // /api/config (email, e'lon narxi, to'lov usullari) — fonda
+  loadServerConfig(); // /api/config (email yoqilganmi) — fonda
   createRoot(document.getElementById('root')).render(
     <React.StrictMode>
       <Boundary>

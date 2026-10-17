@@ -27,7 +27,7 @@ export function AuthProvider({ children }) {
     else storage.remove(USER_KEY);
   }, []);
 
-  // Chiqishda foydalanuvchi keshi (sessionStorage dagi to'lov, telefon va h.k.) ham tozalanadi —
+  // Chiqishda foydalanuvchi keshi (sessionStorage dagi telefon va h.k.) ham tozalanadi —
   // keyingi hisob yoki mehmon oldingi foydalanuvchi ma'lumotini ko'rmasin
   const signOutLocal = useCallback(() => {
     clearToken();

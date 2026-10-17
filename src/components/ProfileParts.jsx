@@ -4,10 +4,11 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../lib/auth.jsx';
 import { compressImage } from '../lib/image.js';
 import { computeBadges, levelOf, scoreOf } from '../lib/meta.js';
+import { openApp } from '../native/browser.js';
 import { haptic, HAS_NATIVE_CAMERA, onRestoredPhoto, takeNativePhoto, takeRestoredPhoto } from '../lib/native.js';
 import { invalidate } from '../lib/store.js';
 import { cx, formatMonth } from '../lib/utils.js';
-import { BADGE_ICONS, CalendarIcon, CameraIcon, CheckIcon, EditIcon, ImageIcon, PinIcon, ShieldIcon, TrashIcon } from './icons.jsx';
+import { BADGE_ICONS, CalendarIcon, CameraIcon, CheckIcon, EditIcon, ImageIcon, MailIcon, MessageIcon, PinIcon, ShieldIcon, TrashIcon } from './icons.jsx';
 import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { Avatar, btn, inputCls, labelCls, Progress, Spinner } from './ui.jsx';
@@ -499,6 +500,51 @@ export function DeleteAccountModal({ onClose, onDeleted }) {
         </ul>
         <PasswordField id="del-pw" label="Tasdiqlash uchun parolingiz" value={pw} onChange={setPw} error={error} autoComplete="current-password" />
       </form>
+    </Modal>
+  );
+}
+
+/** Yordam va bog'lanish uchun kontaktlar (Telegram — ilovada, email — pochta ilovasida ochiladi). */
+export const SUPPORT_TELEGRAM = 'https://t.me/developer_alii';
+export const SUPPORT_EMAIL = 'davlatsudekspert@gmail.com';
+
+/** "Yordam va bog'lanish": savol, shikoyat yoki nomaqbul kontent haqida yozish. */
+export function HelpModal({ onClose }) {
+  const toast = useToast();
+  const telegram = async () => {
+    try {
+      await openApp(SUPPORT_TELEGRAM);
+    } catch {
+      toast("Havolani ochib bo'lmadi", 'error');
+    }
+  };
+  const row = 'flex w-full items-center gap-3 rounded-2xl border border-line bg-surface-2 px-4 py-3.5 text-left transition hover:border-brand-500';
+  const icon = 'grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-surface text-brand ring-1 ring-line';
+  return (
+    <Modal title="Yordam va bog'lanish" subtitle="Savol, taklif yoki nomaqbul kontent haqida yozing" onClose={onClose} autoFocus={false}>
+      <div className="space-y-3">
+        <button type="button" onClick={telegram} className={row} data-testid="help-telegram">
+          <span className={icon}>
+            <MessageIcon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-bold text-ink">Telegram</span>
+            <span className="block truncate text-sm text-ink-3">@developer_alii</span>
+          </span>
+        </button>
+        <a href={`mailto:${SUPPORT_EMAIL}`} className={row} data-testid="help-email">
+          <span className={icon}>
+            <MailIcon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block font-bold text-ink">Email</span>
+            <span className="block truncate text-sm text-ink-3">{SUPPORT_EMAIL}</span>
+          </span>
+        </a>
+        <p className="text-xs leading-relaxed text-ink-3">
+          Nomaqbul hashar, izoh yoki foydalanuvchi haqida ilovaning o'zidagi "Shikoyat qilish" tugmasi orqali ham xabar bering.
+        </p>
+      </div>
     </Modal>
   );
 }

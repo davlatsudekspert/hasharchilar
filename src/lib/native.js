@@ -19,7 +19,7 @@ export async function initNative() {
       if (getRoute().name === 'home') App.exitApp();
       else goBack('/');
     });
-    // Ilova fondan qaytdi (to'lov sahifasidan qaytish, bildirishnomalar) — obunachilarga xabar
+    // Ilova fondan qaytdi (tashqi sahifadan qaytish, bildirishnomalar) — obunachilarga xabar
     await App.addListener('resume', () => resumeSubs.forEach((fn) => fn()));
     // OS kamera paytida ilovani o'ldirgan bo'lsa — surat shu hodisa bilan qaytadi
     await App.addListener('appRestoredResult', (r) => {

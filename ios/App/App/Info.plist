@@ -30,6 +30,8 @@
 	<string>Hashar rasmini olish va davomat QR kodini skanerlash uchun kamera kerak.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Ilovani Face ID bilan ochish uchun (ilova qulfi).</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Xaritada joylashuvingizni va yaqin atrofdagi hasharlarni ko'rsatish uchun. Joylashuv faqat ilova ochiq paytida ishlatiladi.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Xaritada joylashuvingizni va yaqin atrofdagi hasharlarni ko'rsatish, hashar joyini tanlash uchun.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

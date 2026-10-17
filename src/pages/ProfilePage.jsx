@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { appDownloadUrl } from '../components/AppBanner.jsx';
 import AuthForm from '../components/AuthForm.jsx';
 import { EmailVerifyFlow } from '../components/EmailOtp.jsx';
-import { HasharRow, isUnpaid } from '../components/HasharCard.jsx';
+import { HasharRow } from '../components/HasharCard.jsx';
 import {
   CheckIcon,
   ChevronRightIcon,
@@ -19,7 +19,7 @@ import {
   MailIcon,
   MedalIcon,
   PaletteIcon,
-  WalletIcon,
+  HelpIcon,
   PlusIcon,
   SettingsIcon,
   TrashIcon,
@@ -29,7 +29,7 @@ import {
   UserIcon,
 } from '../components/icons.jsx';
 import { BlockedUsersModal } from '../components/BlockParts.jsx';
-import { BadgesGrid, ChangePasswordForm, DeleteAccountModal, EditProfileModal, ProfileHero } from '../components/ProfileParts.jsx';
+import { BadgesGrid, ChangePasswordForm, DeleteAccountModal, EditProfileModal, HelpModal, ProfileHero } from '../components/ProfileParts.jsx';
 import { AccentPicker, ThemePicker, ThemePreview } from '../components/AppearancePicker.jsx';
 import LockSettings from '../lock/LockSettings.jsx';
 import { clearLock } from '../lock/lockStore.js';
@@ -39,6 +39,7 @@ import { btn, CardSkeleton, EmptyState, ErrorState, Link, Segmented, Spinner } f
 import { useAuth } from '../lib/auth.jsx';
 import { IS_NATIVE, SITE_URL } from '../lib/config.js';
 import { haptic, onRestoredPhoto, peekRestoredPhoto, shareLink } from '../lib/native.js';
+import { openExternal } from '../native/browser.js';
 import { navigate } from '../lib/router.js';
 import { useServerConfig } from '../lib/serverConfig.js';
 import { Q } from '../lib/queries.js';
@@ -93,7 +94,7 @@ function MyHashars() {
           <ul className="stagger grid grid-cols-1 gap-3 lg:grid-cols-2">
             {list.map((h) => (
               <li key={h.id}>
-                <HasharRow hashar={h} action={isUnpaid(h)} />
+                <HasharRow hashar={h} action={false} />
               </li>
             ))}
           </ul>
@@ -145,37 +146,6 @@ function SavedHashars() {
         </li>
       ))}
     </ul>
-  );
-}
-
-/** Profil tepasida: to'lov kutayotgan hasharlar haqida eslatma. */
-function UnpaidNotice() {
-  const created = useApi(...Q.myCreated);
-  const { hashar_fee: fee, loaded } = useServerConfig();
-  const unpaid = (Array.isArray(created.data) ? created.data : []).filter(isUnpaid);
-  if (!unpaid.length) return null;
-  const free = loaded && !(fee > 0); // narx 0 — to'lov shart emas, bosilsa bepul e'lon qilinadi
-  const first = unpaid[0];
-  return (
-    <button
-      type="button"
-      onClick={() => navigate(`/tolov/${first.id}`)}
-      className="fade-up mb-4 flex w-full items-center gap-3 rounded-3xl bg-gradient-to-r from-amber-50 to-orange-50 p-4 text-left ring-1 ring-amber-200 transition hover:ring-amber-300 active:scale-[.99] dark:from-amber-400/10 dark:to-orange-400/5 dark:ring-amber-400/25"
-      data-testid="unpaid-notice"
-    >
-      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-400 text-amber-950">
-        <WalletIcon className="h-5 w-5" />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block font-extrabold text-amber-950 dark:text-amber-100">
-          {free ? `${unpaid.length} ta hasharingiz e'lon qilinmagan` : `${unpaid.length} ta hasharingiz to'lovni kutmoqda`}
-        </span>
-        <span className="block truncate text-sm text-amber-900/80 dark:text-amber-200/80">
-          "{first.title}" — {free ? "endi bepul e'lon qilish mumkin" : "to'lovdan so'ng e'lon qilinadi"}
-        </span>
-      </span>
-      <ChevronRightIcon className="h-5 w-5 shrink-0 text-amber-700 dark:text-amber-300" />
-    </button>
   );
 }
 
@@ -333,6 +303,7 @@ function Settings({ onEdit, appInfo }) {
   const [busy, setBusy] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [blockedOpen, setBlockedOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const doLogout = async () => {
     setBusy(true);
     await logout();
@@ -352,6 +323,14 @@ function Settings({ onEdit, appInfo }) {
   const shareApp = async () => {
     const r = await shareLink({ title: 'hasharchilar.uz', text: "Mahallamizni birga obod qilamiz — qo'shiling!", url: `${SITE_URL}/` });
     if (r === 'copied') toast('Havola nusxalandi');
+  };
+  // Statik sahifalar (SPA emas): APK/iOS ilovada ham sayt manzili orqali tashqi brauzerda (Custom Tabs) ochiladi
+  const openPage = async (path) => {
+    try {
+      await openExternal(`${SITE_URL}${path}`);
+    } catch {
+      toast("Havolani ochib bo'lmadi", 'error');
+    }
   };
   return (
     <div className="space-y-5">
@@ -395,11 +374,15 @@ function Settings({ onEdit, appInfo }) {
         {!IS_NATIVE && <SettingsRow icon={DownloadIcon} title="Android ilova" text="APK yuklab olish" href={appDownloadUrl(appInfo)} download="hasharchilar.apk" />}
         <SettingsRow icon={InfoIcon} title="Loyiha haqida" text="Qanday ishlaydi, savollar" onClick={() => navigate('/haqida')} />
         <SettingsRow icon={BanIcon} title="Bloklangan foydalanuvchilar" text="Izohlari va hasharlari sizga ko'rinmaydi" onClick={() => setBlockedOpen(true)} />
+        <SettingsRow icon={ShieldIcon} title="Maxfiylik siyosati" text="Ma'lumotlaringiz qanday ishlatiladi" onClick={() => openPage('/privacy')} />
+        <SettingsRow icon={HandIcon} title="Bolalar xavfsizligi standartlari" text="Bolalarni himoya qilish qoidalarimiz" onClick={() => openPage('/child-safety')} />
+        <SettingsRow icon={HelpIcon} title="Yordam va bog'lanish" text="Telegram yoki email orqali yozing" onClick={() => setHelpOpen(true)} />
         <SettingsRow icon={LogOutIcon} title="Chiqish" danger onClick={doLogout}>
           {busy ? <Spinner className="text-red-600" /> : null}
         </SettingsRow>
         <SettingsRow icon={TrashIcon} title="Hisobni o'chirish" text="Hisob va barcha ma'lumotlar butunlay o'chadi" danger onClick={() => setDeleting(true)} />
       </section>
+      {helpOpen && <HelpModal onClose={() => setHelpOpen(false)} />}
       {blockedOpen && <BlockedUsersModal onClose={() => setBlockedOpen(false)} />}
       {deleting && <DeleteAccountModal onClose={() => setDeleting(false)} onDeleted={onAccountDeleted} />}
     </div>
@@ -459,7 +442,6 @@ export default function ProfilePage({ route, appInfo }) {
 
   return (
     <div className="mx-auto max-w-5xl px-4 pb-12 pt-4 lg:px-6 lg:pt-8">
-      <UnpaidNotice />
       <ProfileHero
         person={user}
         stats={stats}

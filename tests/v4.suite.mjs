@@ -12,7 +12,6 @@ import {
   notifications,
   register,
   rnd,
-  setFee,
   tashkentInMinutes,
   tashkentToMs,
 } from './helpers.mjs';
@@ -41,7 +40,6 @@ describe('v4: saqlanganlar (POST/DELETE /api/hashars/:id/save, GET /api/me/saves
   let h;
 
   before(async () => {
-    await setFee(0);
     a = await register(`Saqlovchi A ${RUN}`);
     b = await register(`Saqlovchi B ${RUN}`);
     h = await createHashar(a);
@@ -89,24 +87,13 @@ describe('v4: saqlanganlar (POST/DELETE /api/hashars/:id/save, GET /api/me/saves
     assert.equal((await api('/api/hashars/abc/save', { method: 'POST', token: b.token })).status, 404);
   });
 
-  test("hashar o'chirilsa saqlanganlardan ham ketadi; to'lanmagan begona hashar saqlanmaydi", async () => {
+  test("hashar o'chirilsa saqlanganlardan ham ketadi", async () => {
     const h2 = await createHashar(a);
     assert.equal((await api(`/api/hashars/${h2.id}/save`, { method: 'POST', token: b.token })).status, 200);
     assert.equal((await api(`/api/hashars/${h2.id}`, { method: 'DELETE', token: a.token })).status, 200);
     const mine = await api('/api/me/saves', { token: b.token });
     assert.equal(mine.status, 200);
     assert.ok(!mine.data.some((x) => x.id === h2.id));
-
-    await setFee(5000);
-    try {
-      const hu = await createHashar(a);
-      assert.equal(hu.payment_status, 'unpaid');
-      assert.equal((await api(`/api/hashars/${hu.id}/save`, { method: 'POST', token: b.token })).status, 404);
-      assert.equal((await api(`/api/hashars/${hu.id}/save`, { method: 'POST', token: a.token })).status, 200, "egasi o'zinikini saqlay oladi");
-      assert.ok((await api('/api/me/saves', { token: a.token })).data.some((x) => x.id === hu.id));
-    } finally {
-      await setFee(0);
-    }
   });
 });
 
@@ -119,7 +106,6 @@ describe('v4: bildirishnomalar markazi', () => {
   let h;
 
   before(async () => {
-    await setFee(0);
     owner = await register(`Bildirish egasi ${RUN}`);
     v1 = await register(`Bildirish Bir ${RUN}`);
     v2 = await register(`Bildirish Ikki ${RUN}`);
@@ -300,7 +286,6 @@ describe('v4: QR davomat (checkin-code, checkin, checkins) va reyting bonusi', (
   let T; // hashar boshlanishi (ms)
 
   before(async () => {
-    await setFee(0);
     [owner, v1, v2, v3, v4, stranger] = await Promise.all(
       ['Davomat egasi', 'Davomat Bir', 'Davomat Ikki', 'Davomat Uch', "Davomat To'rt", 'Davomat begona'].map((n) => register(`${n} ${RUN}`)),
     );
@@ -334,7 +319,7 @@ describe('v4: QR davomat (checkin-code, checkin, checkins) va reyting bonusi', (
     assert.equal((await code()).data.code, r.data.code);
   });
 
-  test("davomat oynasi: hashar vaqtidan ±12 soat (Toshkent); to'lanmagan — 409", async () => {
+  test("davomat oynasi: hashar vaqtidan ±12 soat (Toshkent)", async () => {
     for (const [shift, status] of [[-13 * H, 409], [-11 * H, 200], [11 * H, 200], [13 * H, 409]]) {
       const r = await code({ headers: { 'x-test-now': String(T + shift) } });
       assert.equal(r.status, status, `T${shift / H}h`);
@@ -348,16 +333,6 @@ describe('v4: QR davomat (checkin-code, checkin, checkins) va reyting bonusi', (
     const early = await api(`/api/hashars/${far.id}/checkin`, { method: 'POST', token: v1.token, json: { code: '123456' } });
     assert.equal(early.status, 409);
     assert.equal(early.data.code, 'checkin_closed');
-    await setFee(5000);
-    try {
-      const hu = await createHashar(owner, { date_time: tashkentInMinutes(60) });
-      const ur = await api(`/api/hashars/${hu.id}/checkin-code`, { token: owner.token });
-      assert.equal(ur.status, 409);
-      assert.equal(ur.data.code, 'payment_required');
-      assert.equal((await api(`/api/hashars/${hu.id}/checkin-code`, { token: v1.token })).status, 404, "begonaga to'lanmagan hashar yo'q");
-    } finally {
-      await setFee(0);
-    }
   });
 
   test("checkin: ruxsatlar, noto'g'ri kod, muvaffaqiyat, idempotent", async () => {

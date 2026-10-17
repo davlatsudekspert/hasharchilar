@@ -1,4 +1,4 @@
-// Tashqi havola (to'lov sahifasi va h.k.): APK'da @capacitor/browser (Custom Tabs — ilova ichida, ortga qaytish oson),
+// Tashqi havola (maxfiylik siyosati, yordam va h.k.): APK'da @capacitor/browser (Custom Tabs — ilova ichida, ortga qaytish oson),
 // saytda — yangi oyna. Faqat http(s) havolalar ochiladi.
 import { IS_NATIVE } from '../lib/config.js';
 
@@ -30,7 +30,7 @@ export async function openExternal(url) {
     window.open(href, '_blank', 'noopener');
     return;
   }
-  // To'lov sahifasidan qaytganda ilova qulfi darhol so'ramasin (ilova o'zi ochdi)
+  // Tashqi sahifadan qaytganda ilova qulfi darhol so'ramasin (ilova o'zi ochdi)
   await markExternal();
   await (await browserMod()).Browser.open({ url: href, toolbarColor: toolbarColor(), presentationStyle: 'fullscreen' });
 }

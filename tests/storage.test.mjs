@@ -426,6 +426,13 @@ INSERT INTO reports (reporter_id, target_type, target_id, reason, details) VALUE
 INSERT INTO user_blocks (user_id, blocked_id) VALUES (1, 3);
 `;
 
+// Joriy seed.sql da yo'q (olib tashlangan to'lov funksiyasidan qolgan) jadvallar qatorlari: sxema saqlanadi, migratsiyalar
+// ularni buzmasligi kerak
+const EXTRA_ROWS_LEGACY = `
+INSERT INTO payments (hashar_id, user_id, provider, amount, state, provider_tx_id) VALUES (3, 3, 'manual', 500000, 1, 'manual:legacy');
+INSERT INTO settings (key, value) VALUES ('checkin_secret', 'test-secret');
+`;
+
 async function upgrade(server, body) {
   const res = await fetch(server.url, { method: 'POST', body: JSON.stringify({ target: 'upgrade', ...body }) });
   assert.equal(res.status, 200, await res.clone().text());
@@ -435,7 +442,7 @@ async function upgrade(server, body) {
 describe("DO migratsiyalari: har bir keyingi migratsiya ma'lumotli bazada ham qo'llanadi", () => {
   let dir;
   let server;
-  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4 + EXTRA_ROWS_V6;
+  const seed = readFileSync(join(ROOT, 'seed.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4 + EXTRA_ROWS_V6 + EXTRA_ROWS_LEGACY;
   const seedV5 = readFileSync(join(ROOT, 'tests/fixtures/seed-v5.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
   // Eski sxemalarga yozilgan namunalar: yangi migratsiyalar shu ma'lumot ustida sinaladi
   const seedV4 = readFileSync(join(ROOT, 'tests/fixtures/seed-v4.sql'), 'utf8') + EXTRA_ROWS + EXTRA_ROWS_V3 + EXTRA_ROWS_V4;
@@ -562,6 +569,42 @@ UPDATE users SET email = '   ' WHERE id = 3;`;
     assert.match(badPurpose.error, /CHECK constraint failed/);
     assert.match(noHash.error, /NOT NULL constraint failed/);
     assert.deepEqual(idx.rows.map((x) => x.name), ['idx_email_otps_lookup', 'idx_email_otps_user', 'idx_users_email']);
+  });
+
+  test("0007_free: kelajakdagi to'lanmagan hasharlar e'lon qilinadi, o'tib ketganlari yashirin qoladi; jadvallar saqlanadi", async () => {
+    const at = files.indexOf('0007_free.sql');
+    assert.ok(at > 0);
+    // seed-v5 da 5-hashar 'unpaid'; sanalar vaqtga bog'liq bo'lmasligi uchun aniq (2099 — kelajak, 2001 — o'tmish)
+    const dirty = `${seedV5}
+UPDATE hashars SET date_time = '2099-05-02T09:00' WHERE id = 5;
+INSERT INTO hashars (id, creator_id, title, lat, lng, date_time, payment_status) VALUES
+  (50, 3, 'Eski to''lanmagan', 41.3, 69.2, '2001-05-02T09:00', 'unpaid'),
+  (51, 3, 'Kelajakdagi waived', 41.3, 69.2, '2099-06-01T09:00', 'waived'),
+  (52, 3, 'Bugun to''lanmagan', 41.3, 69.2, date('now') || 'T23:59', 'unpaid');
+INSERT INTO payments (hashar_id, user_id, provider, amount, state) VALUES (5, 3, 'manual', 500000, 1);`;
+    const r = await upgrade(server, {
+      name: 'free-upgrade',
+      before: at,
+      seed: dirty,
+      checks: [
+        'SELECT id, payment_status FROM hashars WHERE id IN (5, 50, 51, 52) ORDER BY id',
+        "SELECT COUNT(*) AS n FROM hashars WHERE payment_status = 'unpaid' AND date_time >= date('now')",
+        'SELECT COUNT(*) AS n FROM payments',
+        "INSERT INTO hashars (creator_id, title, lat, lng, date_time) VALUES (1, 'Yangi hashar', 41.3, 69.2, '2099-01-01T09:00') RETURNING payment_status",
+      ],
+    });
+    assert.ok(!r.seedError, r.seedError);
+    assert.deepEqual(r.steps, files.slice(at).map((name) => ({ name, ok: true })));
+    const [rows, left, payments, fresh] = r.checks;
+    assert.deepEqual(rows.rows, [
+      { id: 5, payment_status: 'paid' },
+      { id: 50, payment_status: 'unpaid' },
+      { id: 51, payment_status: 'waived' },
+      { id: 52, payment_status: 'paid' },
+    ]);
+    assert.equal(left.rows[0].n, 0, "kelajakdagi 'unpaid' qolmadi");
+    assert.equal(payments.rows[0].n, 2, "payments jadvali va qatorlari o'zgarmaydi (buzuvchi migratsiya yo'q)");
+    assert.deepEqual(fresh.rows, [{ payment_status: 'paid' }]);
   });
 
   test("0005_v4: mavjud hasharlar to'langan, davomat bo'sh; to'lovlar / sozlamalar / saqlanganlar / bildirishnomalar ishlaydi", async () => {

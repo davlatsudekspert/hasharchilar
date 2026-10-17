@@ -396,12 +396,6 @@ export const CardIcon = icon(
     <path d="M2 10h20M6 15h4" />
   </>,
 );
-export const WalletIcon = icon(
-  <>
-    <path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1" />
-    <path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4" />
-  </>,
-);
 export const AwardIcon = icon(
   <>
     <circle cx="12" cy="8" r="6" />

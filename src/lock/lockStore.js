@@ -18,7 +18,7 @@ const ITERATIONS = 150_000;
 /** Avtomatik qulflash variantlari (soniya). */
 export const TIMEOUTS = [0, 30, 60, 300];
 const DEFAULT_TIMEOUT = 0;
-// Ilova ichidan ochilgan tashqi oyna (kamera, galereya, to'lov sahifasi, skaner) — qaytganda qulflanmaydi
+// Ilova ichidan ochilgan tashqi oyna (kamera, galereya, maxfiylik sahifasi, skaner) — qaytganda qulflanmaydi
 const EXTERNAL_GRACE = 3 * 60_000;
 const EXTERNAL_WINDOW = 5_000; // markExternal() dan keyin shuncha ms ichida fonga o'tilsa — ilova o'zi ochgan
 
@@ -266,7 +266,7 @@ let bg = null; // { at, external }
 let bioBusy = false;
 let bioEnded = -1e9;
 
-/** Ilova o'zi tashqi oyna ochmoqda (kamera, galereya, ulashish, skaner, to'lov sahifasi) — qaytishda darhol qulflanmaydi. */
+/** Ilova o'zi tashqi oyna ochmoqda (kamera, galereya, ulashish, skaner, tashqi sahifa) — qaytishda darhol qulflanmaydi. */
 export function markExternal() {
   lastExternal = mono();
 }

@@ -9,13 +9,12 @@ import { btn, EmptyState, ErrorState, ItemChips, StatusBadge } from '../componen
 import { api } from '../lib/api.js';
 import { mediaUrl } from '../lib/config.js';
 import { cx, formatDateLong, formatDateTime, formatDay, formatPhone, osmLink, volunteersLabel } from '../lib/utils.js';
-import { Badge, ConfirmDialog, LoadMore, RowsSkeleton, SearchField, useDebounced, usePagedList } from './shared.jsx';
+import { ConfirmDialog, LoadMore, RowsSkeleton, SearchField, useDebounced, usePagedList } from './shared.jsx';
 
 const FILTERS = [
   { id: '', label: 'Barchasi' },
   { id: 'PENDING', label: 'Kutilmoqda' },
   { id: 'COMPLETED', label: 'Bajarildi' },
-  { id: 'unpaid', label: "To'lanmagan" },
 ];
 
 /** O'chirishni tasdiqlash matni. */
@@ -122,8 +121,7 @@ export default function HasharsTab() {
   const [status, setStatus] = useState('');
   const [query, setQuery] = useState('');
   const q = useDebounced(query.trim());
-  // "To'lanmagan" — to'lov holati filtri (payment=unpaid), qolganlari — hashar holati
-  const list = usePagedList((p) => api.admin.hashars({ ...p, ...(status === 'unpaid' ? { payment: 'unpaid' } : { status }), q }), [status, q]);
+  const list = usePagedList((p) => api.admin.hashars({ ...p, status, q }), [status, q]);
   const [preview, setPreview] = useState(null);
   const [confirm, setConfirm] = useState(null);
 
@@ -159,8 +157,6 @@ export default function HasharsTab() {
                   <p className="line-clamp-1 font-bold text-slate-900">{h.title}</p>
                   <div className="mt-1 flex min-w-0 items-center gap-2">
                     <StatusBadge status={h.status} className="shrink-0 !px-2 !py-0.5" />
-                    {h.payment_status === 'unpaid' && <Badge tone="amber">To'lanmagan</Badge>}
-                    {h.payment_status === 'waived' && <Badge tone="sky">Bepul</Badge>}
                     <span className="truncate text-sm text-slate-500">{formatDateTime(h.date_time)}</span>
                   </div>
                   <p className="mt-0.5 truncate text-xs text-slate-500">

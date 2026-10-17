@@ -180,34 +180,7 @@ export async function asAdmin() {
   return adminSession;
 }
 
-// ---------- v4: hashar narxi va to'lov provayderlari ----------
-
-/**
- * Hashar e'lon qilish narxini (so'm) admin sozlamasi orqali o'rnatadi (0 — bepul: yangi hasharlar darhol
- * ommaviy). v3 testlari hasharlar darhol ko'rinishini kutadi, shuning uchun ular boshida setFee(0) chaqiriladi.
- */
-export async function setFee(fee, extra = {}) {
-  const admin = await asAdmin();
-  const r = await api('/api/admin/settings', { method: 'POST', token: admin.token, json: { hashar_fee: fee, ...extra } });
-  assert.equal(r.status, 200, `admin settings: ${JSON.stringify(r.data)}`);
-  assert.equal(r.data.hashar_fee, fee);
-  return r.data;
-}
-
-/**
- * SOXTA to'lov kalitlari (haqiqiy emas) — server aynan shular bilan ishga tushgan bo'lishi kerak:
- *   --var PAYME_MERCHANT_ID:hc-test-merchant-0001 --var PAYME_KEY:hc-test-payme-key
- *   --var CLICK_SERVICE_ID:10001 --var CLICK_MERCHANT_ID:20002 --var CLICK_SECRET_KEY:hc-test-click-secret
- * Boshqa qiymatlar bilan: TEST_PAYME_KEY=... va h.k. Sozlanmagan bo'lsa Payme/Click testlari o'tkaziladi
- * (REQUIRE_PAYMENTS=1 bo'lsa — xato).
- */
-export const PAY_TEST = {
-  paymeMerchant: process.env.TEST_PAYME_MERCHANT_ID || 'hc-test-merchant-0001',
-  paymeKey: process.env.TEST_PAYME_KEY || 'hc-test-payme-key',
-  clickService: process.env.TEST_CLICK_SERVICE_ID || '10001',
-  clickMerchant: process.env.TEST_CLICK_MERCHANT_ID || '20002',
-  clickSecret: process.env.TEST_CLICK_SECRET_KEY || 'hc-test-click-secret',
-};
+// ---------- Vaqt yordamchilari ----------
 
 /** Toshkent vaqti bo'yicha hozirdan `minutes` daqiqa keyingi 'YYYY-MM-DDTHH:MM'. */
 export function tashkentInMinutes(minutes) {
